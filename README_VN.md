@@ -53,13 +53,13 @@ Trước khi chạy, hãy đảm bảo máy bạn đã có:
 
 *   **Cách 1 (Khuyên dùng): Clone với Git**
     ```bash
-    git clone https://github.com/your-github-username/Spotify_np_lyric.git
+    git clone https://github.com/DemoVPS69420/Spotify_np_lyric.git
     cd Spoitify_np_lyric
     ```
-    (Hãy thay `https://github.com/your-github-username/Spotify_np_lyric.git` bằng đường link GitHub thực tế của dự án nếu bạn host dự án này).
+    (Hãy thay `https://github.com/DemoVPS69420/Spotify_np_lyric.git` bằng đường link GitHub thực tế của dự án nếu bạn host dự án này).
 
 *   **Cách 2: Tải file ZIP**
-    1.  Truy cập trang [repository GitHub](https://github.com/your-github-username/Spotify_np_lyric).
+    1.  Truy cập trang [repository GitHub](https://github.com/DemoVPS69420/Spotify_np_lyric).
     2.  Bấm nút màu xanh lá "Code" và chọn "Download ZIP".
     3.  Giải nén file ZIP vào một thư mục bạn muốn.
     4.  Mở terminal/cmd và điều hướng đến thư mục vừa giải nén.

@@ -53,13 +53,13 @@ First, get the project files onto your machine:
 
 *   **Option 1 (Recommended): Clone with Git**
     ```bash
-    git clone https://github.com/your-github-username/Spoitify_np_lyric.git
-    cd Spoitify_np_lyric
+    git clone https://github.com/DemoVPS69420/Spotify_np_lyric.git
+    cd Spotify_np_lyric
     ```
-    (Replace `https://github.com/your-github-username/Spoitify_np_lyric.git` with the actual GitHub repository URL if you host this project).
+    (Replace `https://github.com/DemoVPS69420/Spotify_np_lyric.git` with the actual GitHub repository URL if you host this project).
 
 *   **Option 2: Download as ZIP**
-    1.  Go to the [GitHub repository page](https://github.com/your-github-username/Spoitify_np_lyric).
+    1.  Go to the [GitHub repository page](https://github.com/DemoVPS69420/Spotify_np_lyric).
     2.  Click the green "Code" button and select "Download ZIP".
     3.  Extract the contents of the ZIP file to your desired location.
     4.  Open your terminal/command prompt and navigate to the extracted folder.
