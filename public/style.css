@@ -1,0 +1,278 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700;800&subset=vietnamese&display=swap');
+
+body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background-color: transparent; 
+    font-family: 'Montserrat', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    /* Cố định độ phân giải chuẩn OBS */
+    width: 1920px;
+    height: 1080px;
+}
+
+#obs-canvas {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+/* --- Player Container --- */
+#player-container {
+    position: absolute;
+    /* Vị trí mặc định */
+    top: 50px;
+    left: 50px;
+    
+    display: flex;
+    align-items: center;
+    
+    /* Màu nền mặc định trước khi có gradient */
+    background: #181818; 
+    border-radius: 16px;
+    padding: 16px;
+    
+    /* Box Shadow đẹp hơn */
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    
+    /* Hiệu ứng ẩn hiện + Scale */
+    /* --scale sẽ được set bởi JS, mặc định là 1 */
+    --scale: 1;
+    transform-origin: top left; /* Zoom từ góc trái trên để dễ căn chỉnh */
+    transform: translateX(-50px) scale(var(--scale)); /* Trượt ra + Scale */
+    
+    opacity: 0;
+    transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.5s ease;
+    
+    max-width: 500px;
+    min-width: 350px;
+    z-index: 10;
+    overflow: hidden; /* Để gradient không tràn */
+}
+
+/* --- Lyrics Container --- */
+#lyrics-container {
+    position: absolute;
+    top: 250px; /* Default position */
+    left: 50px;
+    
+    background: rgba(0, 0, 0, 0.6); /* Semi-transparent background */
+    backdrop-filter: blur(4px);
+    border-radius: 12px;
+    padding: 16px;
+    
+    max-width: 500px;
+    width: auto;
+    
+    color: white;
+    font-size: 24px;
+    font-weight: 700;
+    text-align: center;
+    line-height: 1.4;
+    
+    opacity: 0;
+    
+    /* Scale independently */
+    --lyrics-scale: 1;
+    transform: scale(var(--lyrics-scale));
+    transform-origin: top left;
+    
+    transition: opacity 0.5s ease, transform 0.2s ease;
+    z-index: 9;
+    
+    /* Ensure it handles long text */
+    word-wrap: break-word;
+}
+
+#lyrics-container.visible {
+    opacity: 1;
+}
+
+#lyrics-container.editing {
+    border: 2px dashed #1DB954;
+    cursor: move;
+    box-shadow: 0 0 20px rgba(29, 185, 84, 0.5);
+    z-index: 1000;
+}
+
+.lyric-line {
+    display: none; /* Hide all by default, show active */
+    transition: all 0.2s;
+}
+
+.lyric-line.active {
+    display: block;
+    color: #ffffff;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+}
+.lyric-line.next {
+    display: block;
+    opacity: 0.5;
+    font-size: 0.7em;
+    margin-top: 8px;
+}
+
+/* Background Gradient Layer */
+.bg-gradient {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(0,0,0,0.8) 100%);
+    opacity: 0.8;
+    z-index: 0;
+    transition: background 1s ease;
+}
+
+#player-container.visible {
+    transform: translateX(0) scale(var(--scale));
+    opacity: 1;
+}
+
+/* Khi đang chỉnh sửa */
+#player-container.editing {
+    opacity: 1 !important;
+    transform: scale(var(--scale)) !important; /* Bỏ translateX để không bị nhảy khi drag */
+    border: 2px dashed #1DB954;
+    cursor: move;
+    box-shadow: 0 0 20px rgba(29, 185, 84, 0.5);
+    z-index: 1000;
+}
+
+.art-wrapper {
+    width: 90px;
+    height: 90px;
+    flex-shrink: 0;
+    border-radius: 8px;
+    overflow: hidden;
+    margin-right: 18px;
+    position: relative;
+    z-index: 1;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.4);
+}
+
+#album-art {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.info-wrapper {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+    z-index: 1;
+    flex-grow: 1;
+    min-width: 0; /* Quan trọng để flex child co lại */
+}
+
+/* --- Marquee (Chữ chạy) --- */
+.text-scroller {
+    white-space: nowrap;
+    overflow: hidden;
+    position: relative;
+    mask-image: linear-gradient(to right, black 0%, black 90%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, black 0%, black 90%, transparent 100%);
+}
+
+#track-name, #artist-name {
+    display: inline-block;
+    padding-right: 20px; /* Khoảng cách khi lặp lại (nếu dùng animation phức tạp hơn) */
+}
+
+/* Animation class sẽ được add bằng JS */
+.marquee {
+    animation: scroll-left 10s linear infinite;
+    padding-left: 100%; /* Bắt đầu từ bên phải */
+}
+
+@keyframes scroll-left {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-100%); }
+}
+
+#track-name {
+    font-size: 24px;
+    font-weight: 800;
+    color: #ffffff;
+    margin-bottom: 4px;
+}
+
+#artist-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+/* --- Settings Button --- */
+#settings-btn {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    background: rgba(0,0,0,0.6);
+    color: white;
+    padding: 10px 15px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 14px;
+    opacity: 0; /* Ẩn mặc định, chỉ hiện khi hover chuột vào vùng đó trên OBS tương tác */
+    transition: opacity 0.3s;
+    z-index: 100;
+}
+
+#obs-canvas:hover #settings-btn {
+    opacity: 1;
+}
+
+/* --- Edit Overlay --- */
+#edit-overlay {
+    position: absolute;
+    top: 0; 
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.8); /* Tối hơn chút để dễ nhìn slider */
+    z-index: 90;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    color: white;
+}
+
+#edit-overlay.hidden {
+    display: none;
+}
+
+#edit-overlay h2 { margin-top: 0; }
+
+.control-group {
+    margin: 20px 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.control-group label {
+    margin-bottom: 10px;
+    font-size: 18px;
+}
+
+#scale-slider {
+    width: 300px;
+    cursor: pointer;
+}
+
+#save-btn {
+    padding: 10px 20px;
+    font-size: 18px;
+    background: #1DB954;
+    color: white;
+    border: none;
+    border-radius: 25px;
+    cursor: pointer;
+    margin-top: 20px;
+}
