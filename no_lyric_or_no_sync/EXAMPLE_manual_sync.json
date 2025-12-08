@@ -1,0 +1,9 @@
+{
+    "id": "TRACK_ID_HERE",
+    "name": "Track Name Example",
+    "artist": "Artist Name Example",
+    "duration": 180000,
+    "syncedLyrics": "[00:10.00] Dòng lời bài hát đầu tiên\n[00:15.50] Dòng lời bài hát thứ hai\n[00:20.00] Copy lyrics có time-tag vào đây",
+    "plainLyrics": "Lời bài hát dạng văn bản (không bắt buộc)",
+    "note": "Sau khi điền syncedLyrics, bài hát sẽ tự động được chuyển sang thư mục lyrics khi phát lại hoặc khi chạy tool scan."
+}

@@ -20,6 +20,9 @@ const scaleValueDisplay = document.getElementById('scale-value');
 const lyricsScaleSlider = document.getElementById('lyrics-scale-slider');
 const lyricsScaleValueDisplay = document.getElementById('lyrics-scale-value');
 
+// Lyrics Animation Controls
+const lyricsAnimSelect = document.getElementById('lyrics-animation-select');
+
 // State
 let lastTrackId = null;
 let lastIsPlaying = false;
@@ -61,6 +64,10 @@ lyricsContainer.style.setProperty('--lyrics-scale', savedLyricsScale);
 lyricsScaleSlider.value = savedLyricsScale;
 lyricsScaleValueDisplay.textContent = Math.round(savedLyricsScale * 100) + '%';
 
+// Load saved animation
+const savedAnim = localStorage.getItem('lyricsAnimation') || 'none';
+lyricsAnimSelect.value = savedAnim;
+updateLyricsAnimationClass(savedAnim);
 
 // --- Scale Logic ---
 scaleSlider.addEventListener('input', (e) => {
@@ -74,6 +81,17 @@ lyricsScaleSlider.addEventListener('input', (e) => {
     lyricsContainer.style.setProperty('--lyrics-scale', newVal);
     lyricsScaleValueDisplay.textContent = Math.round(newVal * 100) + '%';
 });
+
+lyricsAnimSelect.addEventListener('change', (e) => {
+    updateLyricsAnimationClass(e.target.value);
+});
+
+function updateLyricsAnimationClass(animType) {
+    lyricsContainer.classList.remove('anim-scroll');
+    if (animType === 'scroll') {
+        lyricsContainer.classList.add('anim-scroll');
+    }
+}
 
 // --- Main Logic ---
 
@@ -236,17 +254,25 @@ async function fetchLyrics(trackData) {
             lyricsContainer.classList.add('visible');
             lastLineChangeTime = performance.now(); // Reset again after load
         } else {
-            // User requested to hide lyrics if no sync available
-            console.log('No synced lyrics found. Hiding overlay.');
-            lyricsContainer.classList.remove('visible');
-            lyricsContent.innerHTML = ''; 
+            // Display message when no synced lyrics are found
+            console.log('No synced lyrics found. Displaying custom message.');
+            lyricsContent.innerHTML = 
+                `<div class="lyric-message">Bài hát này chưa có lời/chưa sync thời gian/chưa thêm lời vào spotify</div>` +
+                `<div class="lyric-message-en">This song doesn't have lyrics/not synced/not added to spotify yet</div>`;
+            lyricsContainer.classList.add('visible'); // Make sure container is visible for the message
+            currentLyrics = []; // Clear any old lyrics
+            lastLyricIndex = -1;
         }
 
     } catch (e) {
         console.warn('Lyrics fetch failed:', e);
-        // Hide container if failed
-        lyricsContainer.classList.remove('visible');
-        lyricsContent.innerHTML = '';
+        // Display error message
+        lyricsContent.innerHTML = 
+                `<div class="lyric-message">Không thể tải lời bài hát.</div>` +
+                `<div class="lyric-message-en">Failed to load lyrics.</div>`;
+        lyricsContainer.classList.add('visible');
+        currentLyrics = []; // Clear any old lyrics
+        lastLyricIndex = -1;
     }
 }
 
@@ -357,15 +383,27 @@ function updateLyricsDisplay(index) {
     }
 
     lines.forEach((line, i) => {
-        line.classList.remove('active', 'next');
-        line.style.display = 'none'; // Hide all
+        // Reset classes
+        line.classList.remove('active', 'next', 'previous');
+        
+        // Reset styles controlled by JS in default mode
+        // For 'scroll' mode, CSS handles display via override
+        line.style.display = ''; 
         
         if (i === index) {
             line.classList.add('active');
-            line.style.display = 'block';
+            // Explicit display for default mode compatibility
+            // (Though CSS .active sets display:block, we keep this if logic varies)
+             if (!lyricsContainer.classList.contains('anim-scroll')) {
+                line.style.display = 'block';
+             }
         } else if (i === index + 1 && showNext) {
             line.classList.add('next');
-            line.style.display = 'block';
+             if (!lyricsContainer.classList.contains('anim-scroll')) {
+                line.style.display = 'block';
+             }
+        } else if (i === index - 1) {
+             line.classList.add('previous');
         }
     });
 }
@@ -442,9 +480,10 @@ saveBtn.addEventListener('click', () => {
     lyricsContainer.classList.remove('editing');
     editOverlay.classList.add('hidden');
     
-    // Save Scales
+    // Save Scales & Animation
     localStorage.setItem('widgetScale', scaleSlider.value);
     localStorage.setItem('lyricsScale', lyricsScaleSlider.value);
+    localStorage.setItem('lyricsAnimation', lyricsAnimSelect.value);
     
     // Ẩn Player sau 2 giây (Lyrics giữ nguyên nếu đang hát)
     setTimeout(() => {

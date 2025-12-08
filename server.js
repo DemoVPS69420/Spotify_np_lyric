@@ -228,31 +228,60 @@ app.get('/api/lyrics', async (req, res) => {
     }
 
     const filePath = path.join(__dirname, 'lyrics', `${id}.json`);
+    const noSyncPath = path.join(__dirname, 'no_lyric_or_no_sync', `${id}.json`);
 
-    // 1. Check local cache
+    // 1. Check local cache (Valid Lyrics)
+    let cachedData = null;
     if (fs.existsSync(filePath)) {
         try {
             const fileContent = fs.readFileSync(filePath, 'utf8');
             const data = JSON.parse(fileContent);
             if (data.syncedLyrics || data.plainLyrics) {
                 console.log(`Cache HIT for ${id}`);
-                return res.json(data);
-            } else {
-                console.log(`Cache MISS (Empty Data) for ${id}`);
+                cachedData = data;
             }
         } catch (err) {
             console.error('Error reading lyrics file:', err);
         }
-    } else {
+    } 
+    // 2. Check "No Sync/Manual" folder
+    else if (fs.existsSync(noSyncPath)) {
+        try {
+            const fileContent = fs.readFileSync(noSyncPath, 'utf8');
+            const data = JSON.parse(fileContent);
+            
+            // If user manually added synced lyrics to this file
+            if (data.syncedLyrics && data.syncedLyrics.length > 0) {
+                console.log(`User manually added lyrics for ${id}. Moving to valid cache...`);
+                // Move file to main lyrics folder
+                fs.renameSync(noSyncPath, filePath);
+                cachedData = data;
+            } else {
+                console.log(`Cache HIT (No Lyrics known) for ${id}. Skipping API fetch.`);
+                // Return immediately to avoid useless API calls
+                return res.json(data);
+            }
+        } catch (err) {
+            console.error('Error reading no-sync file:', err);
+        }
+    }
+    else {
         console.log(`Cache MISS (File not found) for ${id}`);
     }
+
+    if (cachedData) {
+        console.log('Sending cached response...');
+        return res.json(cachedData);
+    }
+
+    console.log('Proceeding to fetch from APIs...');
 
     let lyricsData = {
         syncedLyrics: null,
         plainLyrics: null
     };
 
-    // 2. Try PHP API (Spotify Internal via PHP)
+    // 3. Try PHP API (Spotify Internal via PHP)
     try {
         console.log(`Fetching from PHP API (Spotify): ${name} - ${artist}`);
         const phpLyrics = await fetchLyricsFromPhp(id);
@@ -267,7 +296,7 @@ app.get('/api/lyrics', async (req, res) => {
         console.log('PHP API fetch failed:', err.message);
     }
 
-    // 3. If no synced lyrics yet, Try Lrclib.net
+    // 4. If no synced lyrics yet, Try Lrclib.net
     if (!lyricsData.syncedLyrics) {
         try {
             console.log(`Fetching from Lrclib (Get): ${name} - ${artist}`);
@@ -278,7 +307,7 @@ app.get('/api/lyrics', async (req, res) => {
                     artist_name: artist,
                     duration: Math.round(duration / 1000)
                 },
-                timeout: 8000 // Increased timeout
+                timeout: 8000 
             });
             
             lyricsData.syncedLyrics = response.data.syncedLyrics;
@@ -293,7 +322,7 @@ app.get('/api/lyrics', async (req, res) => {
                         track_name: name,
                         artist_name: artist
                     },
-                    timeout: 8000 // Increased timeout
+                    timeout: 8000
                 });
 
                 // Find best match based on duration
@@ -319,12 +348,29 @@ app.get('/api/lyrics', async (req, res) => {
         }
     }
 
-    // 4. Save and Return
-    if (lyricsData.syncedLyrics || lyricsData.plainLyrics) {
+    // 5. Save and Return
+    if (lyricsData.syncedLyrics) {
+        // Found synced lyrics -> Save to main folder
         fs.writeFileSync(filePath, JSON.stringify(lyricsData));
         return res.json(lyricsData);
     } else {
-        return res.status(404).json({ error: 'Lyrics not found' });
+        // No synced lyrics found -> Save to no_lyric_or_no_sync folder
+        console.log(`No synced lyrics found. Saving metadata to ${noSyncPath}`);
+        
+        const noSyncData = {
+            id,
+            name,
+            artist,
+            duration,
+            syncedLyrics: null,
+            plainLyrics: lyricsData.plainLyrics || null, // Keep plain lyrics if found
+            note: "No synced lyrics found. Add 'syncedLyrics' here manually to activate."
+        };
+        
+        fs.writeFileSync(noSyncPath, JSON.stringify(noSyncData, null, 2));
+        
+        // Return 404 or just the empty data so client doesn't retry
+        return res.json(noSyncData);
     }
 });
 

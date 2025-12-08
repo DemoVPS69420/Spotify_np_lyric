@@ -93,9 +93,10 @@ body {
     border: 2px dashed #1DB954;
     cursor: move;
     box-shadow: 0 0 20px rgba(29, 185, 84, 0.5);
-    z-index: 1000;
+    z-index: 2000;
 }
 
+/* --- Lyrics Animation: Default (Fade) --- */
 .lyric-line {
     display: none; /* Hide all by default, show active */
     transition: all 0.2s;
@@ -112,6 +113,62 @@ body {
     font-size: 0.7em;
     margin-top: 8px;
 }
+
+/* Styling for custom messages when lyrics are not found/synced */
+.lyric-message {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.8em;
+    font-weight: 500;
+    margin-top: 10px;
+}
+
+.lyric-message-en {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.6em;
+    font-weight: 400;
+    margin-top: 5px;
+}
+
+/* --- Lyrics Animation: Scroll Up --- */
+#lyrics-container.anim-scroll .lyric-line {
+    display: block; /* Override display: none */
+    position: absolute; /* Stack them */
+    width: 100%; /* Full width of container */
+    top: 50%;
+    left: 0;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: transform 0.6s cubic-bezier(0.2, 0, 0.2, 1), opacity 0.6s ease, filter 0.6s ease;
+    pointer-events: none; /* Don't block clicks */
+}
+
+/* Active Line in Scroll Mode */
+#lyrics-container.anim-scroll .lyric-line.active {
+    position: relative; /* Take up space */
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+    z-index: 2;
+}
+
+/* Next Line in Scroll Mode */
+#lyrics-container.anim-scroll .lyric-line.next {
+    position: absolute;
+    top: 100%; /* Below active */
+    opacity: 0.4;
+    transform: translateY(10px) scale(0.9);
+    filter: blur(2px);
+    z-index: 1;
+}
+
+/* Previous Line (Optional, if we assign a class for it) */
+#lyrics-container.anim-scroll .lyric-line.previous {
+    position: absolute;
+    top: -50%;
+    opacity: 0;
+    transform: translateY(-20px) scale(0.9);
+}
+
 
 /* Background Gradient Layer */
 .bg-gradient {
@@ -138,7 +195,7 @@ body {
     border: 2px dashed #1DB954;
     cursor: move;
     box-shadow: 0 0 20px rgba(29, 185, 84, 0.5);
-    z-index: 1000;
+    z-index: 2000;
 }
 
 .art-wrapper {
@@ -235,12 +292,17 @@ body {
     width: 100%;
     height: 100%;
     background: rgba(0,0,0,0.8); /* Tối hơn chút để dễ nhìn slider */
-    z-index: 90;
+    z-index: 1010; /* Tăng z-index để chắc chắn nằm trên cùng, trên cả player và lyrics khi editing */
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
     color: white;
+}
+
+/* Đảm bảo select nhận tương tác chuột */
+#lyrics-animation-select {
+    pointer-events: auto;
 }
 
 #edit-overlay.hidden {
@@ -264,6 +326,12 @@ body {
 #scale-slider {
     width: 300px;
     cursor: pointer;
+}
+
+select {
+    padding: 8px;
+    border-radius: 4px;
+    font-size: 16px;
 }
 
 #save-btn {
