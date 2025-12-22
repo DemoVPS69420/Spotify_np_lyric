@@ -7,12 +7,14 @@ A customizable, real-time "Now Playing" overlay for Spotify that displays synced
 ## 🌟 Features
 
 *   **Real-time Now Playing:** Shows track name, artist, and album art with a dynamic background gradient extracted from the cover art.
+*   **Spotify Canvas Support:** Automatically fetches and displays the looping video background for supported tracks, bringing your overlay to life.
 *   **Synced Lyrics (Karaoke Style):** Displays time-synced lyrics with active line highlighting and smooth scrolling.
 *   **Advanced Lyrics Fetching System:**
     1.  **Local Cache:** Fast loading for previously played songs.
     2.  **Spotify Internal API (via PHP):** Fetches official time-synced lyrics directly from Spotify (requires `SP_DC` cookie).
     3.  **Lrclib.net Fallback:** If Spotify fails, falls back to the open-source Lrclib database.
 *   **Smart UI Behavior:**
+    *   **Adaptive UI:** The player art container automatically resizes to match the Canvas aspect ratio (e.g., expanding from 1:1 to 9:16 for vertical videos).
     *   Auto-shows when the song changes or resumes.
     *   Auto-hides the player after 10 seconds of inactivity (lyrics remain visible while singing).
     *   **Outro Mode:** Automatically reappears and stays visible during the last 20 seconds of the track.
@@ -30,7 +32,8 @@ This project uses a hybrid **Node.js + PHP** architecture to maximize reliabilit
 2.  **Backend (Node.js - Port 8888):**
     *   Handles Spotify OAuth (Login/Token refreshing).
     *   Serves the UI.
-    *   Manages the API endpoints (`/api/now-playing`, `/api/lyrics`).
+    *   Manages the API endpoints (`/api/now-playing`, `/api/lyrics`, `/api/canvas`).
+    *   **Canvas API Proxy:** Proxies requests to Spotify's Canvas API and caches videos locally to save bandwidth.
     *   Orchestrates the PHP microservice.
 3.  **Microservice (PHP - Port 8100):**
     *   Runs a modified version of `spotify-lyrics-api` locally.
@@ -89,7 +92,7 @@ npm install
 4.  Copy your **Client ID** and **Client Secret**.
 
 ### 4. Get Your SP_DC Cookie
-This is required for fetching official lyrics.
+This is required for fetching official lyrics and Canvas videos.
 1.  Open Chrome/Edge/Firefox and go to [open.spotify.com](https://open.spotify.com).
 2.  Log in.
 3.  Press **F12** to open Developer Tools.
@@ -142,10 +145,13 @@ node server.js
 
 *   `server.js`: Main Node.js application.
 *   `public/`: Frontend assets (HTML, CSS, JS).
+*   `public/canvases/`: Local cache for downloaded Spotify Canvas videos.
 *   `lyrics/`: JSON cache for downloaded lyrics.
 *   `spotify-lyrics-api-main/`: PHP source code for the lyrics fetcher.
+*   `Spotify-Canvas-API-main/`: Module for interacting with Spotify's Canvas API.
 
 ## 🤝 Credits
 
 *   Original PHP Logic: [akashrchandran/spotify-lyrics-api](https://github.com/akashrchandran/spotify-lyrics-api)
+*   Spotify Canvas API: [Paxsenix0/Spotify-Canvas-API](https://github.com/Paxsenix0/Spotify-Canvas-API)
 *   Lrclib: [lrclib.net](https://lrclib.net/) for the fallback database.

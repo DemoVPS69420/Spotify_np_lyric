@@ -374,6 +374,90 @@ app.get('/api/lyrics', async (req, res) => {
     }
 });
 
+// --- Canvas Logic ---
+
+// Ensure public/canvases exists
+const canvasDir = path.join(__dirname, 'public', 'canvases');
+if (!fs.existsSync(canvasDir)) {
+    fs.mkdirSync(canvasDir, { recursive: true });
+}
+
+// Helper to download file
+async function downloadFile(url, outputPath) {
+    const writer = fs.createWriteStream(outputPath);
+    try {
+        const response = await axios({
+            url,
+            method: 'GET',
+            responseType: 'stream'
+        });
+        response.data.pipe(writer);
+        return new Promise((resolve, reject) => {
+            writer.on('finish', resolve);
+            writer.on('error', reject);
+        });
+    } catch (error) {
+        writer.close();
+        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); // Clean up partial file
+        throw error;
+    }
+}
+
+// Canvas API Endpoint
+app.get('/api/canvas', async (req, res) => {
+    const { trackId } = req.query;
+    if (!trackId) return res.status(400).json({ error: 'Missing trackId' });
+
+    // Validate trackId to prevent path traversal
+    if (!/^[a-zA-Z0-9]+$/.test(trackId)) {
+        return res.status(400).json({ error: 'Invalid trackId' });
+    }
+
+    const fileName = `${trackId}.mp4`;
+    const localPath = path.join(canvasDir, fileName);
+    const publicUrl = `/canvases/${fileName}`;
+
+    // 1. Check local cache
+    if (fs.existsSync(localPath)) {
+        // Check if file size is > 0 (avoid empty files from failed downloads)
+        const stats = fs.statSync(localPath);
+        if (stats.size > 0) {
+            return res.json({ canvasUrl: publicUrl, type: 'video' });
+        }
+    }
+
+    // 2. Fetch from Spotify API
+    try {
+        // Dynamic import for ESM module
+        // We need to resolve the path correctly. 
+        // Note: The service uses 'dotenv' which might try to reload .env, but that's fine.
+        const canvasService = await import('./Spotify-Canvas-API-main/services/spotifyCanvasService.js');
+        
+        // Pass the track URI
+        const canvasData = await canvasService.getCanvases(`spotify:track:${trackId}`);
+        
+        if (canvasData && canvasData.canvasesList && canvasData.canvasesList.length > 0) {
+            const canvasUrl = canvasData.canvasesList[0].canvasUrl;
+            
+            if (!canvasUrl) {
+                 return res.json({ canvasUrl: null });
+            }
+
+            // Download and cache
+            console.log(`Downloading canvas for ${trackId}...`);
+            await downloadFile(canvasUrl, localPath);
+            
+            return res.json({ canvasUrl: publicUrl, type: 'video' });
+        } else {
+             // console.log(`No canvas found for ${trackId}`);
+             return res.json({ canvasUrl: null });
+        }
+    } catch (error) {
+        console.error('Error fetching canvas:', error);
+        return res.status(500).json({ error: 'Failed to fetch canvas' });
+    }
+});
+
 app.listen(PORT, '127.0.0.1', () => {
     // Start PHP Server when Node server starts
     startPhpServer();

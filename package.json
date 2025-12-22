@@ -1,5 +1,5 @@
 {
-  "name": "spotify_np_lyric",
+  "name": "Spotify_np_lyric",
   "version": "1.0.0",
   "description": "A customized Spotify Now Playing overlay with synced lyrics",
   "main": "server.js",
@@ -22,6 +22,8 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
-    "open": "^11.0.0"
+    "google-protobuf": "^4.0.1",
+    "open": "^11.0.0",
+    "otpauth": "^9.4.1"
   }
 }

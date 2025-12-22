@@ -7,12 +7,14 @@ Một overlay hiển thị bài hát đang phát trên Spotify kèm theo lời b
 ## 🌟 Tính Năng Nổi Bật
 
 *   **Real-time Now Playing:** Hiển thị tên bài, ca sĩ, và ảnh bìa (album art) với hiệu ứng nền gradient tự động trích xuất màu từ ảnh bìa.
+*   **Hỗ trợ Spotify Canvas:** Tự động tải và hiển thị video nền lặp lại (looping video) cho bài hát, giúp overlay sống động hơn.
 *   **Lời Bài Hát Karaoke:** Lời bài hát chạy theo thời gian thực (time-synced), highlight dòng đang hát và cuộn mượt mà.
 *   **Hệ Thống Lấy Lời Thông Minh:**
     1.  **Cache Cục Bộ:** Tải siêu nhanh cho các bài đã từng nghe.
     2.  **Spotify Internal API (qua PHP):** Lấy lời bài hát chuẩn "chính chủ" từ Spotify (cần cookie `SP_DC`).
     3.  **Lrclib.net Fallback:** Nếu Spotify không có hoặc lỗi, tự động tìm kiếm trên kho dữ liệu mở Lrclib.
 *   **Hành Vi Thông Minh (Smart UI):**
+    *   **Giao diện Thích ứng (Adaptive UI):** Khung ảnh album tự động thay đổi kích thước để phù hợp với tỉ lệ của Canvas (ví dụ: mở rộng từ hình vuông 1:1 sang dọc 9:16).
     *   Tự động hiện khi đổi bài hoặc bấm play.
     *   Tự động ẩn player sau 10 giây nếu không tương tác (lời bài hát vẫn hiện để bạn hát theo).
     *   **Chế độ Outro:** Tự động hiện lại và giữ nguyên màn hình trong 20 giây cuối bài hát.
@@ -30,7 +32,8 @@ Dự án sử dụng mô hình lai **Node.js + PHP** để đảm bảo độ �
 2.  **Backend (Node.js - Port 8888):**
     *   Xử lý đăng nhập Spotify (OAuth).
     *   Chạy giao diện web.
-    *   Quản lý các API (`/api/now-playing`, `/api/lyrics`).
+    *   Quản lý các API (`/api/now-playing`, `/api/lyrics`, `/api/canvas`).
+    *   **Canvas API Proxy:** Proxy các request đến Spotify Canvas API và cache video tại local để tiết kiệm băng thông.
     *   Điều khiển server PHP chạy ngầm.
 3.  **Microservice (PHP - Port 8100):**
     *   Chạy mã nguồn `spotify-lyrics-api` cục bộ.
@@ -54,7 +57,7 @@ Trước khi chạy, hãy đảm bảo máy bạn đã có:
 *   **Cách 1 (Khuyên dùng): Clone với Git**
     ```bash
     git clone https://github.com/DemoVPS69420/Spotify_np_lyric.git
-    cd Spoitify_np_lyric
+    cd Spotify_np_lyric
     ```
     (Hãy thay `https://github.com/DemoVPS69420/Spotify_np_lyric.git` bằng đường link GitHub thực tế của dự án nếu bạn host dự án này).
 
@@ -89,7 +92,7 @@ npm install
 4.  Copy **Client ID** và **Client Secret**.
 
 ### 4. Lấy Cookie SP_DC
-Cần thiết để lấy lời bài hát từ server Spotify.
+Cần thiết để lấy lời bài hát và Canvas video từ server Spotify.
 1.  Mở trình duyệt (Chrome/Edge/Firefox) vào [open.spotify.com](https://open.spotify.com).
 2.  Đăng nhập tài khoản của bạn.
 3.  Nhấn **F12** để mở Developer Tools.
@@ -142,10 +145,13 @@ node server.js
 
 *   `server.js`: Server chính (Node.js).
 *   `public/`: Giao diện (HTML, CSS, JS).
+*   `public/canvases/`: Thư mục cache cho các video Spotify Canvas đã tải.
 *   `lyrics/`: Nơi lưu cache lời bài hát đã tải.
 *   `spotify-lyrics-api-main/`: Mã nguồn PHP xử lý việc lấy lời bài hát.
+*   `Spotify-Canvas-API-main/`: Module tương tác với Spotify Canvas API.
 
 ## 🤝 Credits
 
 *   Logic PHP gốc: [akashrchandran/spotify-lyrics-api](https://github.com/akashrchandran/spotify-lyrics-api)
+*   Spotify Canvas API: [Paxsenix0/Spotify-Canvas-API](https://github.com/Paxsenix0/Spotify-Canvas-API)
 *   Lrclib: [lrclib.net](https://lrclib.net/) (nguồn lời bài hát dự phòng).

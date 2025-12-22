@@ -3,6 +3,8 @@ const lyricsContainer = document.getElementById('lyrics-container');
 const lyricsContent = document.getElementById('lyrics-content');
 const bgGradient = document.querySelector('.bg-gradient');
 const albumArt = document.getElementById('album-art');
+const albumVideo = document.getElementById('album-video');
+const artWrapper = document.querySelector('.art-wrapper');
 const trackName = document.getElementById('track-name');
 const artistName = document.getElementById('artist-name');
 const loginMsg = document.getElementById('login-msg');
@@ -28,6 +30,7 @@ let lastTrackId = null;
 let lastIsPlaying = false;
 let hideTimeout = null;
 let isEditing = false;
+let lastCanvasTrackId = null;
 const colorThief = new ColorThief();
 
 // Lyrics State
@@ -136,6 +139,7 @@ async function fetchNowPlaying() {
         }
         
         if (songChanged) {
+            updateCanvas(currentTrackId);
             if (isPlaying) {
                 fetchLyrics(data);
             } else {
@@ -498,3 +502,44 @@ setInterval(fetchNowPlaying, 1000); // Sync data with server
 setInterval(syncLyrics, 100); // Sync lyrics UI (interpolation)
 
 fetchNowPlaying();
+
+// --- Canvas Logic ---
+async function updateCanvas(trackId) {
+    if (trackId === lastCanvasTrackId) return;
+    lastCanvasTrackId = trackId;
+    
+    // Reset video state & wrapper size
+    albumVideo.classList.remove('visible');
+    albumVideo.src = "";
+    // Reset to square by default (90px)
+    artWrapper.style.height = '90px'; 
+    
+    try {
+        const res = await fetch(`/api/canvas?trackId=${trackId}`);
+        const data = await res.json();
+        
+        if (data.canvasUrl) {
+            albumVideo.src = data.canvasUrl;
+            albumVideo.onloadeddata = () => {
+                // Calculate aspect ratio
+                const videoRatio = albumVideo.videoHeight / albumVideo.videoWidth;
+                // Base width is fixed at 90px (defined in CSS)
+                const newHeight = 90 * videoRatio;
+                
+                // Apply new height
+                artWrapper.style.height = `${newHeight}px`;
+
+                albumVideo.classList.add('visible');
+                albumVideo.play().catch(e => console.log("Auto-play prevented", e));
+            };
+        } else {
+            // No canvas found, stick to album art (square)
+            albumVideo.classList.remove('visible');
+             artWrapper.style.height = '90px'; 
+        }
+    } catch (e) {
+        console.warn('Canvas fetch failed:', e);
+        albumVideo.classList.remove('visible');
+        artWrapper.style.height = '90px';
+    }
+}
