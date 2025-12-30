@@ -94,6 +94,10 @@ function updateLyricsAnimationClass(animType) {
     if (animType === 'scroll') {
         lyricsContainer.classList.add('anim-scroll');
     }
+    // Force refresh lyrics display with new mode
+    if (lastLyricIndex !== -1) {
+        updateLyricsDisplay(lastLyricIndex);
+    }
 }
 
 // --- Main Logic ---
@@ -255,7 +259,7 @@ async function fetchLyrics(trackData) {
         if (data.syncedLyrics) {
             parseLyrics(data.syncedLyrics);
             // Show lyrics container ONLY if we have synced lyrics
-            lyricsContainer.classList.add('visible');
+            // lyricsContainer.classList.add('visible');
             lastLineChangeTime = performance.now(); // Reset again after load
         } else {
             // Display message when no synced lyrics are found
@@ -373,6 +377,12 @@ function syncLyrics() {
 }
 
 function updateLyricsDisplay(index) {
+    // Check if we are in 'scroll' mode and anime.js is loaded
+    if (lyricsContainer.classList.contains('anim-scroll') && typeof anime !== 'undefined') {
+        updateLyricsAnime(index);
+        return;
+    }
+
     const lines = lyricsContent.querySelectorAll('.lyric-line');
     
     // Check if we should show the next line
@@ -393,11 +403,14 @@ function updateLyricsDisplay(index) {
         // Reset styles controlled by JS in default mode
         // For 'scroll' mode, CSS handles display via override
         line.style.display = ''; 
+        // Clear anime.js styles if switching back to default
+        line.style.transform = '';
+        line.style.opacity = '';
+        line.style.filter = '';
         
         if (i === index) {
             line.classList.add('active');
             // Explicit display for default mode compatibility
-            // (Though CSS .active sets display:block, we keep this if logic varies)
              if (!lyricsContainer.classList.contains('anim-scroll')) {
                 line.style.display = 'block';
              }
@@ -411,6 +424,64 @@ function updateLyricsDisplay(index) {
         }
     });
 }
+
+function updateLyricsAnime(index) {
+    const lines = lyricsContent.querySelectorAll('.lyric-line');
+    
+    lines.forEach((line, i) => {
+        if (typeof anime.remove === 'function') {
+            anime.remove(line);
+        }
+
+        const runAnime = (params) => {
+            if (params.ease && !params.easing) params.easing = params.ease;
+            if (typeof anime === 'function') {
+                anime({ targets: line, ...params });
+            } else if (typeof anime === 'object' && typeof anime.animate === 'function') {
+                anime.animate(line, params);
+            }
+        };
+
+        if (i === index) {
+            // Active Line: Center
+            line.classList.add('active');
+            line.classList.remove('next', 'previous');
+            runAnime({
+                translateY: '-50%',
+                opacity: 1,
+                filter: 'blur(0px)',
+                duration: 500,
+                ease: 'outExpo' 
+            });
+        } 
+        else if (i === index - 1) {
+            // Previous Line: Move Up and Out
+            line.classList.add('previous');
+            line.classList.remove('active', 'next');
+            runAnime({
+                translateY: '-100px', 
+                opacity: 0,
+                filter: 'blur(5px)',
+                duration: 400,
+                ease: 'outQuad'
+            });
+        }
+        else {
+            // Hide everything else immediately
+            line.classList.remove('active', 'next', 'previous');
+            const style = window.getComputedStyle(line);
+            if (parseFloat(style.opacity) > 0) {
+                 runAnime({
+                    translateY: '100px', // Reset to bottom
+                    opacity: 0,
+                    duration: 200,
+                    ease: 'linear'
+                });
+            }
+        }
+    });
+}
+
 
 
 // --- Drag & Drop Logic (Unified) ---
