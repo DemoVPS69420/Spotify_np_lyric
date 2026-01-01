@@ -102,4 +102,6 @@ node server.js
 
 *   Logic PHP gốc: [akashrchandran/spotify-lyrics-api](https://github.com/akashrchandran/spotify-lyrics-api)
 *   YouTube Music API: [sigma67/ytmusicapi](https://github.com/sigma67/ytmusicapi)
+*   Spotify Canvas API: [Paxsenix0/Spotify-Canvas-API](https://github.com/Paxsenix0/Spotify-Canvas-API)
+*   Lrclib: [lrclib.net](https://lrclib.net/) (nguồn lời bài hát dự phòng).
 *   Animation Engine: [Anime.js](https://animejs.com/)
