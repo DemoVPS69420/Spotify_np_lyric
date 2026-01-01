@@ -181,7 +181,8 @@ app.get('/api/now-playing', async (req, res) => {
             artist: item.artists.map(artist => artist.name).join(', '),
             albumArt: item.album.images[0].url,
             progress: data.progress_ms,
-            duration: item.duration_ms
+            duration: item.duration_ms,
+            isrc: item.external_ids ? item.external_ids.isrc : null
         };
 
         res.json(trackData);
@@ -219,9 +220,48 @@ async function fetchLyricsFromPhp(trackId) {
     return null;
 }
 
+// Helper: Fetch Lyrics from YouTube Music (via Python)
+function fetchLyricsFromYouTube(trackName, artistName, isrc) {
+    return new Promise((resolve) => {
+        const args = ['fetch_yt_lyrics.py', trackName, artistName];
+        if (isrc) args.push(isrc);
+        
+        const pythonProcess = spawn('python', args);
+        
+        let dataString = '';
+        
+        pythonProcess.stdout.on('data', (data) => {
+            dataString += data.toString();
+        });
+
+        pythonProcess.stderr.on('data', (data) => {
+            console.error(`Python Error: ${data}`);
+        });
+
+        pythonProcess.on('close', (code) => {
+            if (code !== 0) {
+                console.log(`Python script exited with code ${code}`);
+                return resolve(null);
+            }
+            try {
+                const result = JSON.parse(dataString);
+                if (result.lyrics) {
+                    resolve(result); // Return full object
+                } else {
+                    if (result.error) console.log(`YTM Error: ${result.error}`);
+                    resolve(null);
+                }
+            } catch (e) {
+                console.error('Failed to parse Python output:', e);
+                resolve(null);
+            }
+        });
+    });
+}
+
 // Lyrics API Endpoint
 app.get('/api/lyrics', async (req, res) => {
-    const { id, name, artist, duration } = req.query;
+    const { id, name, artist, duration, isrc } = req.query;
 
     if (!id || !name || !artist) {
         return res.status(400).json({ error: 'Missing parameters' });
@@ -286,9 +326,19 @@ app.get('/api/lyrics', async (req, res) => {
         console.log(`Fetching from PHP API (Spotify): ${name} - ${artist}`);
         const phpLyrics = await fetchLyricsFromPhp(id);
         if (phpLyrics) {
-            console.log('Found via PHP API!');
-            lyricsData.syncedLyrics = phpLyrics;
-            lyricsData.plainLyrics = phpLyrics.replace(/\[.*?\]/g, '').trim();
+            // Validate: Check if lyrics are fake-synced (all 00:00.00)
+            const lines = phpLyrics.split('\n');
+            const zeroTimestamps = lines.filter(l => l.includes('[00:00.00]') || l.includes('[00:00:00]')).length;
+            
+            if (lines.length > 5 && zeroTimestamps > lines.length * 0.6) {
+                 console.log(`PHP API returned static lyrics (${zeroTimestamps}/${lines.length} lines are 00:00). Treating as UNSYNCED.`);
+                 lyricsData.plainLyrics = phpLyrics.replace(/\[.*?\]/g, '').trim();
+                 lyricsData.syncedLyrics = null;
+            } else {
+                console.log('Found via PHP API!');
+                lyricsData.syncedLyrics = phpLyrics;
+                lyricsData.plainLyrics = phpLyrics.replace(/\[.*?\]/g, '').trim();
+            }
         } else {
              console.log('PHP API returned null (Lyrics not found or Error).');
         }
@@ -296,7 +346,37 @@ app.get('/api/lyrics', async (req, res) => {
         console.log('PHP API fetch failed:', err.message);
     }
 
-    // 4. If no synced lyrics yet, Try Lrclib.net
+    // 4. Try YouTube Music (via Python script)
+    if (!lyricsData.syncedLyrics) {
+        try {
+            console.log(`Fetching from YouTube Music: ${name} - ${artist} (ISRC: ${isrc || 'N/A'})`);
+            const ytmResult = await fetchLyricsFromYouTube(name, artist, isrc);
+            if (ytmResult && ytmResult.lyrics) {
+                console.log('Found via YouTube Music!');
+                
+                if (ytmResult.isSynced) {
+                     console.log('YouTube Music returned SYNCED lyrics.');
+                     lyricsData.syncedLyrics = ytmResult.lyrics;
+                     lyricsData.plainLyrics = ytmResult.lyrics.replace(/\[.*?\]/g, '').trim();
+                } else {
+                     // Still check regex just in case, but rely on flag
+                     if (/\[\d{2}:\d{2}/.test(ytmResult.lyrics)) {
+                         lyricsData.syncedLyrics = ytmResult.lyrics;
+                         lyricsData.plainLyrics = ytmResult.lyrics.replace(/\[.*?\]/g, '').trim();
+                     } else {
+                         console.log('YouTube Music found PLAIN lyrics. Will try LRCLib for SYNCED lyrics...');
+                         lyricsData.plainLyrics = ytmResult.lyrics;
+                     }
+                }
+            } else {
+                console.log('YouTube Music returned null.');
+            }
+        } catch (err) {
+            console.log('YouTube Music fetch failed:', err.message);
+        }
+    }
+
+    // 5. If no synced lyrics yet, Try Lrclib.net
     if (!lyricsData.syncedLyrics) {
         try {
             console.log(`Fetching from Lrclib (Get): ${name} - ${artist}`);
@@ -354,8 +434,8 @@ app.get('/api/lyrics', async (req, res) => {
         fs.writeFileSync(filePath, JSON.stringify(lyricsData));
         return res.json(lyricsData);
     } else {
-        // No synced lyrics found -> Save to no_lyric_or_no_sync folder
-        console.log(`No synced lyrics found. Saving metadata to ${noSyncPath}`);
+        // No synced lyrics found
+        console.log(`No synced lyrics found for ${id}.`);
         
         const noSyncData = {
             id,
@@ -363,14 +443,14 @@ app.get('/api/lyrics', async (req, res) => {
             artist,
             duration,
             syncedLyrics: null,
-            plainLyrics: lyricsData.plainLyrics || null, // Keep plain lyrics if found
-            note: "No synced lyrics found. Add 'syncedLyrics' here manually to activate."
+            plainLyrics: null, // Don't send plain text to overlay
+            note: "No synced lyrics found."
         };
         
+        // Save metadata but don't return plain lyrics to avoid display
         fs.writeFileSync(noSyncPath, JSON.stringify(noSyncData, null, 2));
         
-        // Return 404 or just the empty data so client doesn't retry
-        return res.json(noSyncData);
+        return res.json({ syncedLyrics: null });
     }
 });
 

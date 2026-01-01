@@ -248,7 +248,8 @@ async function fetchLyrics(trackData) {
             id: trackData.id,
             name: trackData.name,
             artist: trackData.artist,
-            duration: trackData.duration
+            duration: trackData.duration,
+            isrc: trackData.isrc || ''
         });
 
         const res = await fetch(`/api/lyrics?${query}`);
@@ -258,17 +259,16 @@ async function fetchLyrics(trackData) {
         
         if (data.syncedLyrics) {
             parseLyrics(data.syncedLyrics);
-            // Show lyrics container ONLY if we have synced lyrics
-            // lyricsContainer.classList.add('visible');
-            lastLineChangeTime = performance.now(); // Reset again after load
+            // lastLineChangeTime will be reset inside parseLyrics or here
+            lastLineChangeTime = performance.now(); 
         } else {
             // Display message when no synced lyrics are found
             console.log('No synced lyrics found. Displaying custom message.');
             lyricsContent.innerHTML = 
                 `<div class="lyric-message">Bài hát này chưa có lời/chưa sync thời gian/chưa thêm lời vào spotify</div>` +
                 `<div class="lyric-message-en">This song doesn't have lyrics/not synced/not added to spotify yet</div>`;
-            lyricsContainer.classList.add('visible'); // Make sure container is visible for the message
-            currentLyrics = []; // Clear any old lyrics
+            lyricsContainer.classList.add('visible'); // Show container for message
+            currentLyrics = []; 
             lastLyricIndex = -1;
         }
 
@@ -279,7 +279,7 @@ async function fetchLyrics(trackData) {
                 `<div class="lyric-message">Không thể tải lời bài hát.</div>` +
                 `<div class="lyric-message-en">Failed to load lyrics.</div>`;
         lyricsContainer.classList.add('visible');
-        currentLyrics = []; // Clear any old lyrics
+        currentLyrics = []; 
         lastLyricIndex = -1;
     }
 }
