@@ -52,7 +52,18 @@ Trước khi chạy, hãy đảm bảo máy bạn đã có:
 3.  **Python:** Cần thiết nếu muốn dùng nguồn YouTube Music.
 4.  **Tài khoản Spotify Premium:** (Khuyến nghị).
 
-## 🚀 Hướng Dẫn Setup
+## 🚀 Hướng Dẫn Setup Chi Tiết
+
+### 0. Tải Mã Nguồn
+
+*   **Cách 1: Clone bằng Git**
+    ```bash
+    git clone https://github.com/DemoVPS69420/Spotify_np_lyric.git
+    cd Spotify_np_lyric
+    ```
+*   **Cách 2: Tải file ZIP**
+    1.  Bấm nút **"Code"** màu xanh trên GitHub -> chọn **"Download ZIP"**.
+    2.  Giải nén ra thư mục.
 
 ### 1. Cài Đặt Thư Viện
 Mở terminal tại thư mục dự án và chạy:
@@ -60,30 +71,56 @@ Mở terminal tại thư mục dự án và chạy:
 npm install
 ```
 
-### 2. Cấu Hình PHP
-Đảm bảo bật `extension=curl`, `extension=mbstring`, `extension=openssl` trong `php.ini`.
+### 2. Cấu Hình PHP (Quan trọng)
+1.  Tìm file `php.ini` trong thư mục cài đặt PHP.
+2.  Mở bằng Notepad.
+3.  Tìm và **xóa dấu chấm phẩy (;)** ở đầu các dòng sau để kích hoạt:
+    ```ini
+    extension=curl
+    extension=mbstring
+    extension=openssl
+    ```
 
-### 3. Cấu Hình Tài Khoản
+### 3. Cấu Hình Spotify
 
-**A. Spotify (SP_DC Cookie)**
-Tạo file `.env` và điền thông tin:
+#### A. Tạo App trên Developer Dashboard
+1.  Truy cập [Spotify Developer Dashboard](https://developer.spotify.com/dashboard/).
+2.  Tạo App mới.
+3.  Vào phần Settings, thêm **Redirect URI**:
+    ```
+    http://127.0.0.1:8888/callback
+    ```
+4.  Lưu lại và copy **Client ID**, **Client Secret**.
+
+#### B. Lấy Cookie SP_DC
+1.  Đăng nhập [open.spotify.com](https://open.spotify.com).
+2.  Bấm **F12** -> Tab **Application** (hoặc Storage) -> **Cookies**.
+3.  Tìm cookie tên là `sp_dc` và copy giá trị.
+
+#### C. Lưu Cấu Hình
+Tạo file `.env` ở thư mục gốc:
 ```env
 SPOTIFY_CLIENT_ID=client_id_cua_ban
 SPOTIFY_CLIENT_SECRET=client_secret_cua_ban
 SP_DC=cookie_sp_dc_cua_ban
 ```
 
-**B. YouTube Music (Không bắt buộc nhưng khuyên dùng)**
-Để lấy lyric synced từ YouTube Music, tạo file `ytmusic_auth.json` ở thư mục gốc và dán cookie/header của bạn vào:
-```json
-{
-    "User-Agent": "Mozilla/5.0 ...",
-    "Cookie": "..."
-}
-```
-*Mẹo: Lấy cookie bằng cách nhấn F12 (Network tab) tại music.youtube.com.*
+### 4. Cấu Hình YouTube Music (Để lấy lyric tốt hơn)
+1.  Tạo file `ytmusic_auth.json` ở thư mục gốc.
+2.  Đăng nhập [music.youtube.com](https://music.youtube.com).
+3.  Bấm **F12** -> Tab **Network**. Reload trang.
+4.  Bấm vào một request bất kỳ (ví dụ `browse`).
+5.  Tìm phần **Request Headers**, copy `Cookie` và `User-Agent`.
+6.  Dán vào `ytmusic_auth.json`:
+    ```json
+    {
+        "User-Agent": "Mozilla/5.0 ...",
+        "Cookie": "..."
+    }
+    ```
 
-### 4. Chạy Ứng Dụng
+### 5. Chạy Ứng Dụng
+Chạy file `start.bat` HOẶC gõ lệnh:
 ```bash
 node server.js
 ```

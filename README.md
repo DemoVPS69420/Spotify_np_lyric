@@ -55,36 +55,81 @@ Before running, ensure you have:
 
 ## 🚀 Setup Guide
 
+### 0. Download the Source Code
+
+First, get the project files onto your machine:
+
+*   **Option 1 (Recommended): Clone with Git**
+    ```bash
+    git clone https://github.com/DemoVPS69420/Spotify_np_lyric.git
+    cd Spotify_np_lyric
+    ```
+    *(Replace with your actual repo URL if different)*
+
+*   **Option 2: Download as ZIP**
+    1.  Go to the GitHub repository page.
+    2.  Click the green **"Code"** button and select **"Download ZIP"**.
+    3.  Extract the contents to a folder.
+    4.  Open a terminal in that folder.
+
 ### 1. Install Dependencies
-Open a terminal in the project folder and run:
 ```bash
 npm install
 ```
 
 ### 2. Configure PHP
-Ensure `extension=curl`, `extension=mbstring`, `extension=openssl` are enabled in `php.ini`.
+This is critical for the Spotify API to work.
+1.  Locate your `php.ini` file (usually in your PHP installation folder).
+2.  Open it with a text editor.
+3.  Find and **uncomment** (remove `;`) the following lines:
+    ```ini
+    extension=curl
+    extension=mbstring
+    extension=openssl
+    ```
 
-### 3. Setup Spotify & YouTube Music Auth
+### 3. Spotify Configuration (Required)
 
-**A. Spotify (SP_DC Cookie)**
-Create a `.env` file:
+#### A. Create Spotify App
+1.  Go to the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard/).
+2.  Create a new App.
+3.  In App Settings, add this **Redirect URI**:
+    ```
+    http://127.0.0.1:8888/callback
+    ```
+4.  Save and copy your **Client ID** and **Client Secret**.
+
+#### B. Get SP_DC Cookie
+1.  Open [open.spotify.com](https://open.spotify.com) in your browser and log in.
+2.  Press **F12** (Developer Tools).
+3.  Go to **Application** (Chrome/Edge) or **Storage** (Firefox) > **Cookies**.
+4.  Find `https://open.spotify.com` and copy the value of the `sp_dc` cookie.
+
+#### C. Save Credentials
+Create a `.env` file in the root folder:
 ```env
-SPOTIFY_CLIENT_ID=your_client_id_here
-SPOTIFY_CLIENT_SECRET=your_client_secret_here
-SP_DC=your_sp_dc_cookie_value_here
+SPOTIFY_CLIENT_ID=your_client_id
+SPOTIFY_CLIENT_SECRET=your_client_secret
+SP_DC=your_sp_dc_cookie
 ```
 
-**B. YouTube Music (Optional but Recommended)**
-To enable synced lyrics from YouTube Music, create a `ytmusic_auth.json` file in the root folder with your browser headers/cookies:
-```json
-{
-    "User-Agent": "Mozilla/5.0 ...",
-    "Cookie": "..."
-}
-```
-*Tip: You can grab these headers using the Network tab (F12) on music.youtube.com.*
+### 4. YouTube Music Configuration (Optional)
+To enable synced lyrics from YouTube Music (highly recommended as a fallback):
+1.  Create a `ytmusic_auth.json` file in the root folder.
+2.  Go to [music.youtube.com](https://music.youtube.com) and log in.
+3.  Press **F12** > **Network** tab. Refresh the page.
+4.  Click on any request (e.g., `browse`).
+5.  Scroll down to **Request Headers** and copy the `Cookie` and `User-Agent`.
+6.  Paste them into `ytmusic_auth.json` like this:
+    ```json
+    {
+        "User-Agent": "Mozilla/5.0 ...",
+        "Cookie": "..."
+    }
+    ```
 
-### 4. Run the App
+### 5. Run the App
+Double-click `start.bat` OR run:
 ```bash
 node server.js
 ```
