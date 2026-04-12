@@ -18,8 +18,16 @@
             <div class="bg-gradient"></div>
 
             <div class="art-wrapper">
-                <img id="album-art" src="" alt="Album Art" crossorigin="anonymous">
-                <video id="album-video" src="" loop muted playsinline class="hidden"></video>
+                <div class="art-inner">
+                    <div class="art-slide" id="art-current">
+                        <img class="album-art" src="" alt="Album Art" crossorigin="anonymous">
+                        <video class="album-video" src="" loop muted playsinline></video>
+                    </div>
+                    <div class="art-slide" id="art-next">
+                        <img class="album-art" src="" alt="Album Art" crossorigin="anonymous">
+                        <video class="album-video" src="" loop muted playsinline></video>
+                    </div>
+                </div>
             </div>
             
             <div class="info-wrapper">
@@ -64,6 +72,19 @@
                     <option value="none">Mặc định (Hiện/Ẩn)</option>
                     <option value="scroll">Cuộn chữ (Scroll Up)</option>
                 </select>
+            </div>
+
+            <div class="control-group">
+                <label style="flex-direction: row; cursor: pointer;">
+                    <input type="checkbox" id="always-show-player" style="margin-right: 10px; width: 20px; height: 20px;">
+                    Luôn hiện box "Now playing"
+                </label>
+            </div>
+
+            <div class="control-group">
+                <label>Ảnh nền (Local):</label>
+                <input type="file" id="bg-upload" accept="image/*" style="margin-bottom: 10px; color: white;">
+                <button id="bg-reset" style="padding: 5px 10px; border-radius: 5px; cursor: pointer;">Đặt lại mặc định</button>
             </div>
 
             <button id="save-btn">Lưu & Thoát</button>

@@ -2,9 +2,8 @@ const container = document.getElementById('player-container');
 const lyricsContainer = document.getElementById('lyrics-container');
 const lyricsContent = document.getElementById('lyrics-content');
 const bgGradient = document.querySelector('.bg-gradient');
-const albumArt = document.getElementById('album-art');
-const albumVideo = document.getElementById('album-video');
 const artWrapper = document.querySelector('.art-wrapper');
+const artInner = document.querySelector('.art-inner');
 const trackName = document.getElementById('track-name');
 const artistName = document.getElementById('artist-name');
 const loginMsg = document.getElementById('login-msg');
@@ -25,13 +24,27 @@ const lyricsScaleValueDisplay = document.getElementById('lyrics-scale-value');
 // Lyrics Animation Controls
 const lyricsAnimSelect = document.getElementById('lyrics-animation-select');
 
+// Always Show Option
+const alwaysShowCheckbox = document.getElementById('always-show-player');
+
+// Background Controls
+const bgUpload = document.getElementById('bg-upload');
+const bgReset = document.getElementById('bg-reset');
+
 // State
 let lastTrackId = null;
 let lastIsPlaying = false;
 let hideTimeout = null;
 let isEditing = false;
-let lastCanvasTrackId = null;
 const colorThief = new ColorThief();
+
+// Flip Art State
+let currentSlideIndex = 0; 
+let isFlipped = false;
+const slides = [
+    document.getElementById('art-current'),
+    document.getElementById('art-next')
+];
 
 // Lyrics State
 let currentLyrics = [];
@@ -40,6 +53,19 @@ let currentProgress = 0;
 let lastUpdateTime = 0;
 let isPlayingState = false;
 let lastLineChangeTime = 0;
+
+// --- Helper: Safe Animation (Support Anime.js v3 & v4) ---
+function safeAnimate(targets, params) {
+    if (!params && typeof targets === 'object' && targets.targets) {
+        params = targets;
+        targets = params.targets;
+    }
+    if (typeof anime === 'function') {
+        return anime({ targets, ...params });
+    } else if (typeof anime === 'object' && typeof anime.animate === 'function') {
+        return anime.animate(targets, params);
+    }
+}
 
 // --- Initialization ---
 
@@ -72,6 +98,52 @@ const savedAnim = localStorage.getItem('lyricsAnimation') || 'none';
 lyricsAnimSelect.value = savedAnim;
 updateLyricsAnimationClass(savedAnim);
 
+// Load Always Show Option
+const savedAlwaysShow = localStorage.getItem('alwaysShowPlayer') === 'true';
+alwaysShowCheckbox.checked = savedAlwaysShow;
+if (savedAlwaysShow) {
+    container.classList.add('visible');
+}
+
+// --- Background Logic ---
+function applyCustomBackground() {
+    const bgData = localStorage.getItem('customBg');
+    if (bgData) {
+        document.body.style.backgroundImage = `url(${bgData})`;
+        document.body.style.backgroundSize = 'cover';
+        document.body.style.backgroundPosition = 'center';
+        document.body.style.backgroundRepeat = 'no-repeat';
+    } else {
+        document.body.style.backgroundImage = '';
+    }
+}
+
+applyCustomBackground();
+
+bgUpload.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            const result = event.target.result;
+            try {
+                localStorage.setItem('customBg', result);
+                applyCustomBackground();
+            } catch (err) {
+                console.error("Storage failed:", err);
+                alert("Ảnh quá lớn để lưu vào trình duyệt. Hãy thử ảnh nhỏ hơn.");
+            }
+        };
+        reader.readAsDataURL(file);
+    }
+});
+
+bgReset.addEventListener('click', () => {
+    localStorage.removeItem('customBg');
+    applyCustomBackground();
+    bgUpload.value = ''; 
+});
+
 // --- Scale Logic ---
 scaleSlider.addEventListener('input', (e) => {
     const newVal = e.target.value;
@@ -94,7 +166,6 @@ function updateLyricsAnimationClass(animType) {
     if (animType === 'scroll') {
         lyricsContainer.classList.add('anim-scroll');
     }
-    // Force refresh lyrics display with new mode
     if (lastLyricIndex !== -1) {
         updateLyricsDisplay(lastLyricIndex);
     }
@@ -103,7 +174,6 @@ function updateLyricsAnimationClass(animType) {
 // --- Main Logic ---
 
 async function fetchNowPlaying() {
-    // Nếu đang chỉnh sửa thì không cập nhật ẩn/hiện, chỉ cập nhật thông tin nếu có
     if (isEditing) return;
 
     try {
@@ -122,28 +192,27 @@ async function fetchNowPlaying() {
         const isPlaying = data.isPlaying;
         const currentTrackId = data.id;
         
-        // Sync time
         currentProgress = data.progress;
         lastUpdateTime = performance.now();
         isPlayingState = isPlaying;
 
-        // Logic hiển thị:
-        // 1. Đổi bài khi đang phát
-        // 2. Tiếp tục phát (Resume)
-        // 3. 20 giây cuối bài
         const songChanged = (currentTrackId !== lastTrackId);
         const resumed = (currentTrackId === lastTrackId) && (!lastIsPlaying && isPlaying);
         
         const timeLeft = data.duration - data.progress;
         const isNearEnd = (isPlaying && timeLeft <= 20000 && timeLeft > 0);
 
-        // Update UI bất kể hiển thị hay không (để dữ liệu luôn mới)
-        if (songChanged || (isPlaying && container.classList.contains('visible')) || isNearEnd) {
-            updateUI(data);
+        // Always show option
+        if (alwaysShowCheckbox.checked && isPlaying && !container.classList.contains('visible')) {
+            container.classList.add('visible');
+        }
+
+        // --- CORE UPDATE LOGIC ---
+        if (songChanged || resumed || (isPlaying && container.classList.contains('visible')) || isNearEnd) {
+            updateUI(data, songChanged);
         }
         
         if (songChanged) {
-            updateCanvas(currentTrackId);
             if (isPlaying) {
                 fetchLyrics(data);
             } else {
@@ -151,16 +220,12 @@ async function fetchNowPlaying() {
             }
         }
         
-        // Trigger hiển thị Player (Auto-hide logic applies ONLY to player)
         if ((songChanged && isPlaying) || resumed) {
-            updateUI(data); 
             showNotification();
         } else if (isNearEnd) {
-            // Show permanently during last 20s
             if (!container.classList.contains('visible') && !isEditing) {
                 container.classList.add('visible');
             }
-            // Cancel any pending hide timer so it stays up
             if (hideTimeout) clearTimeout(hideTimeout);
         }
 
@@ -172,76 +237,148 @@ async function fetchNowPlaying() {
     }
 }
 
-function updateUI(data) {
-    // Chỉ cập nhật và check overflow nếu nội dung thực sự thay đổi
+async function updateUI(data, songChanged) {
+    // 1. Update Text (Always check if change)
     if (trackName.textContent !== data.name) {
+        if (typeof anime !== 'undefined' && typeof anime.remove === 'function') anime.remove(trackName);
+        trackName.style.top = '-30px';
+        trackName.style.opacity = '0';
         trackName.textContent = data.name;
         checkOverflow(trackName);
+        
+        safeAnimate(trackName, {
+            top: 0,
+            opacity: 1,
+            duration: 600,
+            easing: 'easeOutExpo',
+            delay: 100
+        });
     }
     
     if (artistName.textContent !== data.artist) {
+        if (typeof anime !== 'undefined' && typeof anime.remove === 'function') anime.remove(artistName);
+        artistName.style.top = '20px';
+        artistName.style.opacity = '0';
         artistName.textContent = data.artist;
         checkOverflow(artistName);
+        
+        safeAnimate(artistName, {
+            top: 0,
+            opacity: 1,
+            duration: 600,
+            easing: 'easeOutExpo',
+            delay: 200
+        });
     }
 
-    // Load ảnh và cập nhật màu
-    // Lưu ý: albumArt.src trả về full URL, nên so sánh có thể cần cẩn thận.
-    // Tuy nhiên Spotify URL thường cố định.
-    if (albumArt.getAttribute('src') !== data.albumArt) {
-        albumArt.crossOrigin = "Anonymous";
-        albumArt.src = data.albumArt;
-        
-        albumArt.onload = () => {
+    // 2. Handle Flip & Media (Only if song changed)
+    if (songChanged) {
+        const targetIndex = 1 - currentSlideIndex;
+        const targetSlide = slides[targetIndex];
+        const targetImg = targetSlide.querySelector('.album-art');
+        const targetVideo = targetSlide.querySelector('.album-video');
+
+        // Reset target slide state
+        targetVideo.classList.remove('visible');
+        targetVideo.pause();
+        targetVideo.src = "";
+        targetImg.crossOrigin = "Anonymous";
+        targetImg.src = data.albumArt;
+
+        // Extract color and flip
+        targetImg.onload = async () => {
+            // Update Background Gradient
             try {
-                const color = colorThief.getColor(albumArt);
-                // Tạo gradient từ màu chủ đạo sang trong suốt/đen
+                const color = colorThief.getColor(targetImg);
                 const rgbString = color.join(',');
                 bgGradient.style.background = `linear-gradient(135deg, rgba(${rgbString}, 0.9) 0%, rgba(20,20,20, 0.95) 100%)`;
             } catch (e) {
-                console.warn('Cannot extract color', e);
                 bgGradient.style.background = `linear-gradient(135deg, rgba(50,50,50,0.9) 0%, rgba(20,20,20, 0.95) 100%)`;
+            }
+
+            // Fetch Canvas for this specific track
+            try {
+                const res = await fetch(`/api/canvas?trackId=${data.id}`);
+                const canvasData = await res.json();
+                
+                if (canvasData.canvasUrl) {
+                    targetVideo.src = canvasData.canvasUrl;
+                    targetVideo.onloadeddata = () => {
+                        const videoRatio = targetVideo.videoHeight / targetVideo.videoWidth;
+                        artWrapper.style.height = `${90 * videoRatio}px`;
+                        targetVideo.classList.add('visible');
+                        targetVideo.play().catch(() => {});
+                        triggerFlip(targetIndex);
+                    };
+                } else {
+                    artWrapper.style.height = '90px';
+                    triggerFlip(targetIndex);
+                }
+            } catch (e) {
+                artWrapper.style.height = '90px';
+                triggerFlip(targetIndex);
             }
         };
     }
 }
 
+function triggerFlip(nextIndex) {
+    if (currentSlideIndex === nextIndex) return;
+    
+    // Stop and Hide video on the PREVIOUS slide
+    const prevSlide = slides[currentSlideIndex];
+    const prevVideo = prevSlide.querySelector('.album-video');
+    if (prevVideo) {
+        prevVideo.pause();
+        prevVideo.classList.remove('visible');
+        prevVideo.src = "";
+    }
+
+    isFlipped = !isFlipped;
+    safeAnimate(artInner, {
+        rotateY: isFlipped ? 180 : 0,
+        duration: 800,
+        easing: 'easeInOutBack'
+    });
+    currentSlideIndex = nextIndex;
+}
+
 function checkOverflow(element) {
-    // Reset trước khi đo
     element.classList.remove('marquee');
     element.parentElement.style.justifyContent = 'flex-start';
+    element.style.left = '0';
 
-    // Đo độ rộng
     const parentWidth = element.parentElement.clientWidth;
     const contentWidth = element.scrollWidth;
 
     if (contentWidth > parentWidth) {
         element.classList.add('marquee');
+        element.style.left = ''; 
     }
 }
 
 function showNotification() {
     if (isEditing) return;
-
-    // Show Player
     container.classList.add('visible');
     
     if (hideTimeout) clearTimeout(hideTimeout);
 
-    hideTimeout = setTimeout(() => {
-        if (!isEditing) {
-            container.classList.remove('visible');
-            // Do NOT hide lyrics here.
-        }
-    }, 10000);
+    if (!alwaysShowCheckbox.checked) {
+        hideTimeout = setTimeout(() => {
+            if (!isEditing && !alwaysShowCheckbox.checked) {
+                container.classList.remove('visible');
+            }
+        }, 10000);
+    }
 }
 
 // --- Lyrics Logic ---
 
 async function fetchLyrics(trackData) {
-    lyricsContent.innerHTML = ''; // Clear for new song
+    lyricsContent.innerHTML = '';
     currentLyrics = [];
     lastLyricIndex = -1;
-    lastLineChangeTime = performance.now(); // Reset timer
+    lastLineChangeTime = performance.now(); 
 
     try {
         const query = new URLSearchParams({
@@ -254,64 +391,40 @@ async function fetchLyrics(trackData) {
 
         const res = await fetch(`/api/lyrics?${query}`);
         if (!res.ok) throw new Error('No lyrics found');
-        
         const data = await res.json();
-        
         if (data.syncedLyrics) {
-            parseLyrics(data.syncedLyrics);
-            // lastLineChangeTime will be reset inside parseLyrics or here
+            parseLyrics(data.syncedLyrics, data.offset || 0);
             lastLineChangeTime = performance.now(); 
         } else {
-            // Display message when no synced lyrics are found
-            console.log('No synced lyrics found. Displaying custom message.');
             lyricsContent.innerHTML = 
                 `<div class="lyric-message">Bài hát này chưa có lời/chưa sync thời gian/chưa thêm lời vào spotify</div>` +
                 `<div class="lyric-message-en">This song doesn't have lyrics/not synced/not added to spotify yet</div>`;
-            lyricsContainer.classList.add('visible'); // Show container for message
+            lyricsContainer.classList.add('visible');
             currentLyrics = []; 
             lastLyricIndex = -1;
         }
-
     } catch (e) {
-        console.warn('Lyrics fetch failed:', e);
-        // Display error message
-        lyricsContent.innerHTML = 
-                `<div class="lyric-message">Không thể tải lời bài hát.</div>` +
-                `<div class="lyric-message-en">Failed to load lyrics.</div>`;
+        lyricsContent.innerHTML = `<div class="lyric-message">Không thể tải lời bài hát.</div>`;
         lyricsContainer.classList.add('visible');
-        currentLyrics = []; 
-        lastLyricIndex = -1;
     }
 }
 
-function parseLyrics(lrc) {
+function parseLyrics(lrc, offset = 0) {
     const lines = lrc.split('\n');
-    // Improved Regex: Allow [00:00.00] or [00:00:00] and loose start
     const regex = /^\[(\d{2}):(\d{2})[\.:](\d{2,3})\](.*)/;
-    
     currentLyrics = lines.map(line => {
         const match = line.match(regex);
         if (match) {
             const min = parseInt(match[1]);
             const sec = parseInt(match[2]);
-            // Take up to 3 digits for MS
             const msStr = match[3];
-            // If 2 digits, treat as 10ms units? No, Lrc usually means direct ms.
-            // Standard: .xx = 1/100s -> *10. .xxx = 1/1000s.
-            let ms = 0;
-            if (msStr.length === 2) {
-                ms = parseInt(msStr) * 10;
-            } else {
-                ms = parseInt(msStr);
-            }
-            
-            const time = min * 60000 + sec * 1000 + ms;
+            let ms = (msStr.length === 2) ? parseInt(msStr) * 10 : parseInt(msStr);
+            const time = min * 60000 + sec * 1000 + ms + offset;
             const text = match[4].trim();
             return { time, text };
         }
         return null;
-    }).filter(item => item !== null && item.text.length > 0); // Filter empty lines
-
+    }).filter(item => item !== null && item.text.length > 0);
     renderLyrics();
 }
 
@@ -328,204 +441,94 @@ function renderLyrics() {
 
 function syncLyrics() {
     if (!isPlayingState || currentLyrics.length === 0) return;
-
-    // Calculate interpolated progress
     const now = performance.now();
     const dt = now - lastUpdateTime;
     const interpolatedProgress = currentProgress + dt;
-
-    // Find current line
-    // We look for the last line that has time <= interpolatedProgress
     let activeIndex = -1;
     for (let i = 0; i < currentLyrics.length; i++) {
-        if (currentLyrics[i].time <= interpolatedProgress) {
-            activeIndex = i;
-        } else {
-            break;
-        }
+        if (currentLyrics[i].time <= interpolatedProgress) activeIndex = i;
+        else break;
     }
-
     if (activeIndex !== lastLyricIndex) {
         lastLyricIndex = activeIndex;
         updateLyricsDisplay(activeIndex);
-        
-        // Line changed: Show lyrics and reset timer
         if (!isEditing) {
             lyricsContainer.classList.add('visible');
             lastLineChangeTime = now;
         }
-    } else {
-        // Line currently static
-        if (isEditing) return; // Don't hide while editing
-
+    } else if (!isEditing) {
         const timeSinceChange = now - lastLineChangeTime;
-        const isLastLine = (activeIndex === currentLyrics.length - 1);
-
-        // Hide logic
-        if (isLastLine) {
-            // End of song: hide after 5 seconds
-            if (timeSinceChange > 5000 && lyricsContainer.classList.contains('visible')) {
-                lyricsContainer.classList.remove('visible');
-            }
-        } else {
-            // Instrumental/Gap: hide after 10 seconds
-            if (timeSinceChange > 10000 && lyricsContainer.classList.contains('visible')) {
-                lyricsContainer.classList.remove('visible');
-            }
+        if (timeSinceChange > (activeIndex === currentLyrics.length - 1 ? 5000 : 10000)) {
+            if (lyricsContainer.classList.contains('visible')) lyricsContainer.classList.remove('visible');
         }
     }
 }
 
 function updateLyricsDisplay(index) {
-    // Check if we are in 'scroll' mode and anime.js is loaded
     if (lyricsContainer.classList.contains('anim-scroll') && typeof anime !== 'undefined') {
         updateLyricsAnime(index);
         return;
     }
-
     const lines = lyricsContent.querySelectorAll('.lyric-line');
-    
-    // Check if we should show the next line
-    let showNext = true;
-    if (index >= 0 && index < currentLyrics.length - 1) {
-        const currentLineTime = currentLyrics[index].time;
-        const nextLineTime = currentLyrics[index + 1].time;
-        // If gap > 10 seconds, don't show next line
-        if (nextLineTime - currentLineTime > 10000) {
-            showNext = false;
-        }
-    }
-
     lines.forEach((line, i) => {
-        // Reset classes
         line.classList.remove('active', 'next', 'previous');
-        
-        // Reset styles controlled by JS in default mode
-        // For 'scroll' mode, CSS handles display via override
         line.style.display = ''; 
-        // Clear anime.js styles if switching back to default
         line.style.transform = '';
         line.style.opacity = '';
-        line.style.filter = '';
-        
         if (i === index) {
             line.classList.add('active');
-            // Explicit display for default mode compatibility
-             if (!lyricsContainer.classList.contains('anim-scroll')) {
-                line.style.display = 'block';
-             }
-        } else if (i === index + 1 && showNext) {
+            if (!lyricsContainer.classList.contains('anim-scroll')) line.style.display = 'block';
+        } else if (i === index + 1) {
             line.classList.add('next');
-             if (!lyricsContainer.classList.contains('anim-scroll')) {
-                line.style.display = 'block';
-             }
+            if (!lyricsContainer.classList.contains('anim-scroll')) line.style.display = 'block';
         } else if (i === index - 1) {
-             line.classList.add('previous');
+            line.classList.add('previous');
         }
     });
 }
 
 function updateLyricsAnime(index) {
     const lines = lyricsContent.querySelectorAll('.lyric-line');
-    
     lines.forEach((line, i) => {
-        if (typeof anime.remove === 'function') {
-            anime.remove(line);
-        }
-
-        const runAnime = (params) => {
-            if (params.ease && !params.easing) params.easing = params.ease;
-            if (typeof anime === 'function') {
-                anime({ targets: line, ...params });
-            } else if (typeof anime === 'object' && typeof anime.animate === 'function') {
-                anime.animate(line, params);
-            }
-        };
-
+        if (typeof anime !== 'undefined' && typeof anime.remove === 'function') anime.remove(line);
         if (i === index) {
-            // Active Line: Center
             line.classList.add('active');
-            line.classList.remove('next', 'previous');
-            runAnime({
-                translateY: '-50%',
-                opacity: 1,
-                filter: 'blur(0px)',
-                duration: 500,
-                ease: 'outExpo' 
-            });
-        } 
-        else if (i === index - 1) {
-            // Previous Line: Move Up and Out
+            safeAnimate(line, { translateY: '-50%', opacity: 1, filter: 'blur(0px)', duration: 500, easing: 'outExpo' });
+        } else if (i === index - 1) {
             line.classList.add('previous');
-            line.classList.remove('active', 'next');
-            runAnime({
-                translateY: '-100px', 
-                opacity: 0,
-                filter: 'blur(5px)',
-                duration: 400,
-                ease: 'outQuad'
-            });
-        }
-        else {
-            // Hide everything else immediately
+            safeAnimate(line, { translateY: '-100px', opacity: 0, filter: 'blur(5px)', duration: 400, easing: 'outQuad' });
+        } else {
             line.classList.remove('active', 'next', 'previous');
-            const style = window.getComputedStyle(line);
-            if (parseFloat(style.opacity) > 0) {
-                 runAnime({
-                    translateY: '100px', // Reset to bottom
-                    opacity: 0,
-                    duration: 200,
-                    ease: 'linear'
-                });
+            if (parseFloat(window.getComputedStyle(line).opacity) > 0) {
+                 safeAnimate(line, { translateY: '100px', opacity: 0, duration: 200, easing: 'linear' });
             }
         }
     });
 }
 
-
-
-// --- Drag & Drop Logic (Unified) ---
-
+// --- Drag & Drop ---
 function makeDraggable(element, saveKey) {
     let isDragging = false;
     let startX, startY, initialLeft, initialTop;
-
     element.addEventListener('mousedown', (e) => {
         if (!isEditing) return;
-        
         isDragging = true;
-        startX = e.clientX;
-        startY = e.clientY;
-        
+        startX = e.clientX; startY = e.clientY;
         const rect = element.getBoundingClientRect();
-        initialLeft = rect.left;
-        initialTop = rect.top;
-        
+        initialLeft = rect.left; initialTop = rect.top;
         element.style.cursor = 'grabbing';
     });
-
     document.addEventListener('mousemove', (e) => {
         if (!isDragging) return;
-        
-        e.preventDefault();
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
-        
-        element.style.left = `${initialLeft + dx}px`;
-        element.style.top = `${initialTop + dy}px`;
+        element.style.left = `${initialLeft + e.clientX - startX}px`;
+        element.style.top = `${initialTop + e.clientY - startY}px`;
     });
-
     document.addEventListener('mouseup', () => {
         if (isDragging) {
             isDragging = false;
             element.style.cursor = 'move';
-            
-            // Save Position
             const rect = element.getBoundingClientRect();
-            localStorage.setItem(saveKey, JSON.stringify({
-                x: rect.left,
-                y: rect.top
-            }));
+            localStorage.setItem(saveKey, JSON.stringify({ x: rect.left, y: rect.top }));
         }
     });
 }
@@ -533,20 +536,11 @@ function makeDraggable(element, saveKey) {
 makeDraggable(container, 'widgetPosition');
 makeDraggable(lyricsContainer, 'lyricsWidgetPosition');
 
-
-// --- Edit Mode Toggle ---
-
 settingsBtn.addEventListener('click', () => {
     isEditing = true;
-    container.classList.add('visible'); 
-    container.classList.add('editing');
-    
-    lyricsContainer.classList.add('visible');
-    lyricsContainer.classList.add('editing');
-
+    container.classList.add('visible', 'editing');
+    lyricsContainer.classList.add('visible', 'editing');
     editOverlay.classList.remove('hidden');
-    
-    if (hideTimeout) clearTimeout(hideTimeout);
 });
 
 saveBtn.addEventListener('click', () => {
@@ -554,63 +548,13 @@ saveBtn.addEventListener('click', () => {
     container.classList.remove('editing');
     lyricsContainer.classList.remove('editing');
     editOverlay.classList.add('hidden');
-    
-    // Save Scales & Animation
     localStorage.setItem('widgetScale', scaleSlider.value);
     localStorage.setItem('lyricsScale', lyricsScaleSlider.value);
     localStorage.setItem('lyricsAnimation', lyricsAnimSelect.value);
-    
-    // Ẩn Player sau 2 giây (Lyrics giữ nguyên nếu đang hát)
-    setTimeout(() => {
-        container.classList.remove('visible');
-        // Không ẩn lyricsContainer ở đây, nó tự quản lý bởi fetchNowPlaying
-    }, 2000);
+    localStorage.setItem('alwaysShowPlayer', alwaysShowCheckbox.checked);
+    if (!alwaysShowCheckbox.checked) setTimeout(() => container.classList.remove('visible'), 2000);
 });
 
-
-// Loops
-setInterval(fetchNowPlaying, 1000); // Sync data with server
-setInterval(syncLyrics, 100); // Sync lyrics UI (interpolation)
-
+setInterval(fetchNowPlaying, 1000);
+setInterval(syncLyrics, 100);
 fetchNowPlaying();
-
-// --- Canvas Logic ---
-async function updateCanvas(trackId) {
-    if (trackId === lastCanvasTrackId) return;
-    lastCanvasTrackId = trackId;
-    
-    // Reset video state & wrapper size
-    albumVideo.classList.remove('visible');
-    albumVideo.src = "";
-    // Reset to square by default (90px)
-    artWrapper.style.height = '90px'; 
-    
-    try {
-        const res = await fetch(`/api/canvas?trackId=${trackId}`);
-        const data = await res.json();
-        
-        if (data.canvasUrl) {
-            albumVideo.src = data.canvasUrl;
-            albumVideo.onloadeddata = () => {
-                // Calculate aspect ratio
-                const videoRatio = albumVideo.videoHeight / albumVideo.videoWidth;
-                // Base width is fixed at 90px (defined in CSS)
-                const newHeight = 90 * videoRatio;
-                
-                // Apply new height
-                artWrapper.style.height = `${newHeight}px`;
-
-                albumVideo.classList.add('visible');
-                albumVideo.play().catch(e => console.log("Auto-play prevented", e));
-            };
-        } else {
-            // No canvas found, stick to album art (square)
-            albumVideo.classList.remove('visible');
-             artWrapper.style.height = '90px'; 
-        }
-    } catch (e) {
-        console.warn('Canvas fetch failed:', e);
-        albumVideo.classList.remove('visible');
-        artWrapper.style.height = '90px';
-    }
-}

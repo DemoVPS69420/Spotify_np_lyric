@@ -234,15 +234,37 @@ body {
     z-index: 1;
     box-shadow: 0 5px 15px rgba(0,0,0,0.4);
     transition: height 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+    perspective: 1000px; /* Cần thiết cho animation 3D */
 }
 
-#album-art {
+.art-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transform-style: preserve-3d;
+}
+
+.art-slide {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    backface-visibility: hidden;
+}
+
+#art-next {
+    transform: rotateY(180deg);
+}
+
+.album-art {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    display: block;
 }
 
-#album-video {
+.album-video {
     position: absolute;
     top: 0;
     left: 0;
@@ -253,7 +275,7 @@ body {
     display: none;
 }
 
-#album-video.visible {
+.album-video.visible {
     display: block;
 }
 
@@ -272,13 +294,22 @@ body {
     white-space: nowrap;
     overflow: hidden;
     position: relative;
+    height: 34px; /* Fix height for track name box to allow vertical animation */
+    width: 100%; /* Đảm bảo chiếm hết không gian info-wrapper */
     mask-image: linear-gradient(to right, black 0%, black 90%, transparent 100%);
     -webkit-mask-image: linear-gradient(to right, black 0%, black 90%, transparent 100%);
 }
 
+.text-scroller:last-child {
+    height: 24px; /* Smaller height for artist name box */
+}
+
 #track-name, #artist-name {
     display: inline-block;
-    padding-right: 20px; /* Khoảng cách khi lặp lại (nếu dùng animation phức tạp hơn) */
+    padding-right: 40px; /* Tăng khoảng cách để marquee mượt hơn */
+    position: relative; /* Chuyển về relative để không làm sập layout và dễ checkOverflow */
+    top: 0;
+    left: 0;
 }
 
 /* Animation class sẽ được add bằng JS */
