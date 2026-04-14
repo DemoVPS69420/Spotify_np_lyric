@@ -21,9 +21,9 @@
     "axios": "^1.15.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
-    "express": "^4.22.1",
+    "express": "^5.2.1",
     "google-protobuf": "^4.0.1",
     "open": "^11.0.0",
-    "otpauth": "^9.4.1"
+    "otpauth": "^9.5.0"
   }
 }
