@@ -1,24 +1,72 @@
-# Compiled class file
-*.class
+# ============================================================
+# Node.js
+# ============================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# Log file
+# ============================================================
+# Sensitive credentials — NEVER commit these
+# ============================================================
+# Keep .env in repo as a template (with placeholder values only)
+# Uncomment the line below if you want to fully exclude .env:
+# .env
+
+# YouTube Music auth headers (contains personal cookies)
+ytmusic_auth.json
+
+# ============================================================
+# Cached data — personal & large, not part of the project
+# ============================================================
+
+# Synced lyrics cache (can contain thousands of JSON files)
+lyrics/
+!lyrics/.gitkeep
+
+# Tracks with no/unsynced lyrics
+no_lyric_or_no_sync/
+!no_lyric_or_no_sync/.gitkeep
+
+# Spotify Canvas video cache (can be hundreds of MB)
+public/canvases/
+!public/canvases/.gitkeep
+
+# ============================================================
+# PHP debug logs — may contain token info
+# ============================================================
+spotify-lyrics-api-main/php_debug_log.txt
+spotify-lyrics-api-main/debug_curl_response.txt
+spotify-lyrics-api-main/debug_token.txt
+spotify-lyrics-api-main/debug_token_acquisition.txt
+
+# ============================================================
+# Python
+# ============================================================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# ============================================================
+# OS & Editor
+# ============================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.suo
+*.user
+
+# ============================================================
+# Misc
+# ============================================================
 *.log
-
-# BlueJ files
-*.ctxt
-
-# Mobile Tools for Java (J2ME)
-.mtj.tmp/
-
-# Package Files #
-*.jar
-*.war
-*.nar
-*.ear
-*.zip
-*.tar.gz
-*.rar
-
-# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
-hs_err_pid*
-replay_pid*

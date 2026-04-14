@@ -10,6 +10,15 @@ const { spawn } = require('child_process');
 
 dotenv.config();
 
+// [FIX] Validate required environment variables before starting
+const REQUIRED_ENV = ['SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_SECRET', 'SP_DC'];
+const missingEnv = REQUIRED_ENV.filter(key => !process.env[key]);
+if (missingEnv.length > 0) {
+    console.error(`\n[FATAL] Missing required environment variables: ${missingEnv.join(', ')}`);
+    console.error('Please check your .env file and add the missing values.\n');
+    process.exit(1);
+}
+
 const app = express();
 app.use(cors());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -24,6 +33,13 @@ const REDIRECT_URI = `http://127.0.0.1:${PORT}/callback`;
 let accessToken = null;
 let refreshToken = null;
 let tokenExpirationTime = null;
+
+// Token refresh lock — prevent concurrent refresh calls (race condition fix)
+let isRefreshing = false;
+let refreshPromise = null;
+
+// OAuth state store — CSRF protection
+const oauthStates = new Set();
 
 // PHP Server Process Reference
 let phpServerProcess = null;
@@ -59,7 +75,17 @@ function startPhpServer() {
     });
 
     phpServerProcess.on('close', (code) => {
-        console.log(`PHP server exited with code ${code}`);
+        // [FIX] Auto-restart PHP server if it crashes unexpectedly
+        // code === null means it was killed intentionally (SIGINT/exit)
+        if (code !== 0 && code !== null) {
+            console.warn(`PHP server crashed (exit code ${code}). Restarting in 3 seconds...`);
+            setTimeout(() => {
+                console.log('Restarting PHP server...');
+                startPhpServer();
+            }, 3000);
+        } else {
+            console.log(`PHP server stopped (code ${code})`);
+        }
     });
 }
 
@@ -75,6 +101,11 @@ process.on('SIGINT', () => {
 // Login Route
 app.get('/login', (req, res) => {
     const state = generateRandomString(16);
+    // [FIX] Store state for CSRF verification in callback
+    oauthStates.add(state);
+    // Auto-remove after 10 minutes to prevent memory leak
+    setTimeout(() => oauthStates.delete(state), 10 * 60 * 1000);
+
     const scope = 'user-read-currently-playing user-read-playback-state';
 
     res.redirect('https://accounts.spotify.com/authorize?' +
@@ -90,6 +121,14 @@ app.get('/login', (req, res) => {
 // Callback Route
 app.get('/callback', async (req, res) => {
     const code = req.query.code || null;
+    const returnedState = req.query.state || null;
+
+    // [FIX] Verify OAuth state to prevent CSRF attacks
+    if (!returnedState || !oauthStates.has(returnedState)) {
+        console.error('OAuth state mismatch — possible CSRF attack. Rejecting callback.');
+        return res.status(403).send('Authorization failed: invalid state parameter. Please try logging in again.');
+    }
+    oauthStates.delete(returnedState); // One-time use
 
     try {
         const response = await axios({
@@ -144,23 +183,37 @@ const refreshAccessToken = async () => {
     }
 };
 
+// [FIX] Token refresh with lock — prevents concurrent refresh calls (race condition)
+const ensureValidToken = async () => {
+    if (Date.now() > tokenExpirationTime - 300000) {
+        if (!isRefreshing) {
+            isRefreshing = true;
+            refreshPromise = refreshAccessToken().finally(() => {
+                isRefreshing = false;
+                refreshPromise = null;
+            });
+        }
+        // All concurrent callers await the same single refresh promise
+        await refreshPromise;
+    }
+};
+
 // Now Playing API Endpoint
 app.get('/api/now-playing', async (req, res) => {
     if (!accessToken) {
         return res.json({ loggedIn: false });
     }
 
-    // Refresh if needed (give 5 minute buffer)
-    if (Date.now() > tokenExpirationTime - 300000) {
-        await refreshAccessToken();
-    }
+    // [FIX] Use locked refresh to prevent race condition
+    await ensureValidToken();
 
     try {
         const response = await axios.get('https://api.spotify.com/v1/me/player/currently-playing', {
             headers: { 'Authorization': 'Bearer ' + accessToken }
         });
 
-        if (response.status === 204 || response.status > 400) {
+        // [FIX] was `> 400`, should be `>= 400` to catch Bad Request (400) too
+        if (response.status === 204 || response.status >= 400) {
             return res.json({ isPlaying: false });
         }
 
@@ -225,11 +278,21 @@ function fetchLyricsFromYouTube(trackName, artistName, isrc) {
     return new Promise((resolve) => {
         const args = ['fetch_yt_lyrics.py', trackName, artistName];
         if (isrc) args.push(isrc);
-        
+
         const pythonProcess = spawn('python', args);
-        
         let dataString = '';
-        
+        let resolved = false;
+
+        // [FIX] Kill Python process after 20 seconds to prevent hanging requests
+        const processTimeout = setTimeout(() => {
+            if (!resolved) {
+                console.warn('Python process timed out after 20s — killing it.');
+                pythonProcess.kill('SIGKILL');
+                resolved = true;
+                resolve(null);
+            }
+        }, 20000);
+
         pythonProcess.stdout.on('data', (data) => {
             dataString += data.toString();
         });
@@ -239,6 +302,10 @@ function fetchLyricsFromYouTube(trackName, artistName, isrc) {
         });
 
         pythonProcess.on('close', (code) => {
+            clearTimeout(processTimeout);
+            if (resolved) return; // Already resolved by timeout
+            resolved = true;
+
             if (code !== 0) {
                 console.log(`Python script exited with code ${code}`);
                 return resolve(null);
@@ -265,6 +332,11 @@ app.get('/api/lyrics', async (req, res) => {
 
     if (!id || !name || !artist) {
         return res.status(400).json({ error: 'Missing parameters' });
+    }
+
+    // [FIX] Validate id to prevent path traversal attacks (same as /api/canvas)
+    if (!/^[a-zA-Z0-9]+$/.test(id)) {
+        return res.status(400).json({ error: 'Invalid track id' });
     }
 
     const filePath = path.join(__dirname, 'lyrics', `${id}.json`);
@@ -428,7 +500,7 @@ app.get('/api/lyrics', async (req, res) => {
         }
     }
 
-    // 5. Save and Return
+    // 6. Save and Return
     if (lyricsData.syncedLyrics) {
         // Found synced lyrics -> Save to main folder
         fs.writeFileSync(filePath, JSON.stringify(lyricsData));
@@ -462,87 +534,4 @@ if (!fs.existsSync(canvasDir)) {
     fs.mkdirSync(canvasDir, { recursive: true });
 }
 
-// Helper to download file
-async function downloadFile(url, outputPath) {
-    const writer = fs.createWriteStream(outputPath);
-    try {
-        const response = await axios({
-            url,
-            method: 'GET',
-            responseType: 'stream'
-        });
-        response.data.pipe(writer);
-        return new Promise((resolve, reject) => {
-            writer.on('finish', resolve);
-            writer.on('error', reject);
-        });
-    } catch (error) {
-        writer.close();
-        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); // Clean up partial file
-        throw error;
-    }
-}
-
-// Canvas API Endpoint
-app.get('/api/canvas', async (req, res) => {
-    const { trackId } = req.query;
-    if (!trackId) return res.status(400).json({ error: 'Missing trackId' });
-
-    // Validate trackId to prevent path traversal
-    if (!/^[a-zA-Z0-9]+$/.test(trackId)) {
-        return res.status(400).json({ error: 'Invalid trackId' });
-    }
-
-    const fileName = `${trackId}.mp4`;
-    const localPath = path.join(canvasDir, fileName);
-    const publicUrl = `/canvases/${fileName}`;
-
-    // 1. Check local cache
-    if (fs.existsSync(localPath)) {
-        // Check if file size is > 0 (avoid empty files from failed downloads)
-        const stats = fs.statSync(localPath);
-        if (stats.size > 0) {
-            return res.json({ canvasUrl: publicUrl, type: 'video' });
-        }
-    }
-
-    // 2. Fetch from Spotify API
-    try {
-        // Dynamic import for ESM module
-        // We need to resolve the path correctly. 
-        // Note: The service uses 'dotenv' which might try to reload .env, but that's fine.
-        const canvasService = await import('./Spotify-Canvas-API-main/services/spotifyCanvasService.js');
-        
-        // Pass the track URI
-        const canvasData = await canvasService.getCanvases(`spotify:track:${trackId}`);
-        
-        if (canvasData && canvasData.canvasesList && canvasData.canvasesList.length > 0) {
-            const canvasUrl = canvasData.canvasesList[0].canvasUrl;
-            
-            if (!canvasUrl) {
-                 return res.json({ canvasUrl: null });
-            }
-
-            // Download and cache
-            console.log(`Downloading canvas for ${trackId}...`);
-            await downloadFile(canvasUrl, localPath);
-            
-            return res.json({ canvasUrl: publicUrl, type: 'video' });
-        } else {
-             // console.log(`No canvas found for ${trackId}`);
-             return res.json({ canvasUrl: null });
-        }
-    } catch (error) {
-        console.error('Error fetching canvas:', error);
-        return res.status(500).json({ error: 'Failed to fetch canvas' });
-    }
-});
-
-app.listen(PORT, '127.0.0.1', () => {
-    // Start PHP Server when Node server starts
-    startPhpServer();
-
-    console.log(`Server running at http://127.0.0.1:${PORT}`);
-    console.log(`Please verify that your Spotify App Redirect URI is set to: http://127.0.0.1:${PORT}/callback`);
-    console.log(`To login, go to http://127.0.0.1:${PORT}/login`);
-});
+// Helper to download 

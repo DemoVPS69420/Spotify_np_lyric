@@ -54,15 +54,21 @@ let lastUpdateTime = 0;
 let isPlayingState = false;
 let lastLineChangeTime = 0;
 
+// [FIX] Stale fetch guard — prevents old lyrics from overriding a newer song's lyrics
+// Each fetchLyrics call gets a unique ID; if the song changes mid-fetch, the old result is discarded
+let currentFetchId = 0;
+
 // --- Helper: Safe Animation (Support Anime.js v3 & v4) ---
+// [FIX] Removed dead-code branch that reassigned `targets` from params —
+// it was never triggered (all callers pass 2 args) and had a subtle bug where
+// `params` still carried a `.targets` key after reassignment, causing duplicate
+// targets when spread into anime({targets, ...params}).
 function safeAnimate(targets, params) {
-    if (!params && typeof targets === 'object' && targets.targets) {
-        params = targets;
-        targets = params.targets;
-    }
     if (typeof anime === 'function') {
+        // Anime.js v3: anime({ targets, ...animationProps })
         return anime({ targets, ...params });
     } else if (typeof anime === 'object' && typeof anime.animate === 'function') {
+        // Anime.js v4: anime.animate(targets, animationProps)
         return anime.animate(targets, params);
     }
 }
@@ -278,6 +284,11 @@ async function updateUI(data, songChanged) {
         const targetImg = targetSlide.querySelector('.album-art');
         const targetVideo = targetSlide.querySelector('.album-video');
 
+        // [FIX] Capture the track ID at the time this handler is registered.
+        // If the song changes again before onload fires (rapid skipping),
+        // `lastTrackId` will have moved on — we check against `data.id` to discard stale callbacks.
+        const expectedTrackId = data.id;
+
         // Reset target slide state
         targetVideo.classList.remove('visible');
         targetVideo.pause();
@@ -287,6 +298,9 @@ async function updateUI(data, songChanged) {
 
         // Extract color and flip
         targetImg.onload = async () => {
+            // [FIX] Guard: discard if a newer song has already taken over
+            if (lastTrackId !== expectedTrackId) return;
+
             // Update Background Gradient
             try {
                 const color = colorThief.getColor(targetImg);
@@ -298,12 +312,16 @@ async function updateUI(data, songChanged) {
 
             // Fetch Canvas for this specific track
             try {
-                const res = await fetch(`/api/canvas?trackId=${data.id}`);
+                const res = await fetch(`/api/canvas?trackId=${expectedTrackId}`);
                 const canvasData = await res.json();
-                
+
+                // [FIX] Guard again after the async canvas fetch
+                if (lastTrackId !== expectedTrackId) return;
+
                 if (canvasData.canvasUrl) {
                     targetVideo.src = canvasData.canvasUrl;
                     targetVideo.onloadeddata = () => {
+                        if (lastTrackId !== expectedTrackId) return; // Guard in video load too
                         const videoRatio = targetVideo.videoHeight / targetVideo.videoWidth;
                         artWrapper.style.height = `${90 * videoRatio}px`;
                         targetVideo.classList.add('visible');
@@ -375,10 +393,13 @@ function showNotification() {
 // --- Lyrics Logic ---
 
 async function fetchLyrics(trackData) {
+    // [FIX] Claim a unique fetch slot — any previous pending fetch is now considered stale
+    const fetchId = ++currentFetchId;
+
     lyricsContent.innerHTML = '';
     currentLyrics = [];
     lastLyricIndex = -1;
-    lastLineChangeTime = performance.now(); 
+    lastLineChangeTime = performance.now();
 
     try {
         const query = new URLSearchParams({
@@ -390,20 +411,29 @@ async function fetchLyrics(trackData) {
         });
 
         const res = await fetch(`/api/lyrics?${query}`);
+
+        // [FIX] Song may have changed while we were awaiting — discard stale result
+        if (fetchId !== currentFetchId) return;
+
         if (!res.ok) throw new Error('No lyrics found');
         const data = await res.json();
+
+        // [FIX] Check again after JSON parse (another async boundary)
+        if (fetchId !== currentFetchId) return;
+
         if (data.syncedLyrics) {
             parseLyrics(data.syncedLyrics, data.offset || 0);
-            lastLineChangeTime = performance.now(); 
+            lastLineChangeTime = performance.now();
         } else {
-            lyricsContent.innerHTML = 
+            lyricsContent.innerHTML =
                 `<div class="lyric-message">Bài hát này chưa có lời/chưa sync thời gian/chưa thêm lời vào spotify</div>` +
                 `<div class="lyric-message-en">This song doesn't have lyrics/not synced/not added to spotify yet</div>`;
             lyricsContainer.classList.add('visible');
-            currentLyrics = []; 
+            currentLyrics = [];
             lastLyricIndex = -1;
         }
     } catch (e) {
+        if (fetchId !== currentFetchId) return; // Stale — don't overwrite UI
         lyricsContent.innerHTML = `<div class="lyric-message">Không thể tải lời bài hát.</div>`;
         lyricsContainer.classList.add('visible');
     }
@@ -442,7 +472,11 @@ function renderLyrics() {
 function syncLyrics() {
     if (!isPlayingState || currentLyrics.length === 0) return;
     const now = performance.now();
-    const dt = now - lastUpdateTime;
+    // [FIX] Cap dt at 3 seconds — prevents lyric from jumping wildly forward if:
+    // - the browser tab was backgrounded/throttled
+    // - network latency delayed the last fetchNowPlaying response
+    // Beyond 3s without a server update, we trust the server timestamp more than interpolation
+    const dt = Math.min(now - lastUpdateTime, 3000);
     const interpolatedProgress = currentProgress + dt;
     let activeIndex = -1;
     for (let i = 0; i < currentLyrics.length; i++) {
@@ -555,6 +589,14 @@ saveBtn.addEventListener('click', () => {
     if (!alwaysShowCheckbox.checked) setTimeout(() => container.classList.remove('visible'), 2000);
 });
 
-setInterval(fetchNowPlaying, 1000);
+// [FIX] Adaptive polling — 1s when music is playing, 5s when paused.
+// Using recursive setTimeout instead of setInterval so the delay is recalculated
+// after each response (avoids overlap if a fetch takes longer than the interval).
+async function pollNowPlaying() {
+    await fetchNowPlaying();
+    const nextDelay = isPlayingState ? 1000 : 5000;
+    setTimeout(pollNowPlaying, nextDelay);
+}
+
 setInterval(syncLyrics, 100);
-fetchNowPlaying();
+pollNowPlaying();
