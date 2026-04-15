@@ -39,6 +39,17 @@
                     <span id="artist-name">Artist Name</span>
                 </div>
             </div>
+
+            <!-- Progress Bar — chỉ hiện ở Spotify Green theme -->
+            <div id="progress-bar-wrap">
+                <div class="progress-track">
+                    <div id="progress-bar-fill"></div>
+                </div>
+                <div class="progress-times">
+                    <span id="progress-current">0:00</span>
+                    <span id="progress-duration">0:00</span>
+                </div>
+            </div>
         </div>
 
         <!-- Lyrics Container -->
@@ -79,6 +90,14 @@
                     <input type="checkbox" id="always-show-player" style="margin-right: 10px; width: 20px; height: 20px;">
                     Luôn hiện box "Now playing"
                 </label>
+            </div>
+
+            <div class="control-group">
+                <label for="theme-select">Giao diện (Theme):</label>
+                <select id="theme-select">
+                    <option value="classic">Classic (Mặc định)</option>
+                    <option value="green">Spotify Green</option>
+                </select>
             </div>
 
             <div class="control-group">

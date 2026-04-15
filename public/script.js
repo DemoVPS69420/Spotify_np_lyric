@@ -31,6 +31,10 @@ const alwaysShowCheckbox = document.getElementById('always-show-player');
 const bgUpload = document.getElementById('bg-upload');
 const bgReset = document.getElementById('bg-reset');
 
+// Theme Controls
+const themeSelect = document.getElementById('theme-select');
+const obsCanvas   = document.getElementById('obs-canvas');
+
 // State
 let lastTrackId = null;
 let lastIsPlaying = false;
@@ -53,6 +57,9 @@ let currentProgress = 0;
 let lastUpdateTime = 0;
 let isPlayingState = false;
 let lastLineChangeTime = 0;
+
+// Progress bar state (used by Spotify Green theme)
+let currentDuration = 0;
 
 // [FIX] Stale fetch guard — prevents old lyrics from overriding a newer song's lyrics
 // Each fetchLyrics call gets a unique ID; if the song changes mid-fetch, the old result is discarded
@@ -109,6 +116,34 @@ const savedAlwaysShow = localStorage.getItem('alwaysShowPlayer') === 'true';
 alwaysShowCheckbox.checked = savedAlwaysShow;
 if (savedAlwaysShow) {
     container.classList.add('visible');
+}
+
+// Load Theme
+const savedTheme = localStorage.getItem('overlayTheme') || 'classic';
+themeSelect.value = savedTheme;
+applyTheme(savedTheme);
+
+// --- Theme Logic ---
+function applyTheme(theme) {
+    obsCanvas.classList.toggle('theme-green', theme === 'green');
+}
+
+// --- Progress Bar Logic (Spotify Green theme) ---
+function updateProgressBar(progress, duration) {
+    const fill    = document.getElementById('progress-bar-fill');
+    const curEl   = document.getElementById('progress-current');
+    const durEl   = document.getElementById('progress-duration');
+    if (!fill) return;
+    const pct = duration > 0 ? (progress / duration * 100) : 0;
+    fill.style.width = pct + '%';
+    const fmt = ms => {
+        const totalSec = Math.floor(ms / 1000);
+        const m = Math.floor(totalSec / 60);
+        const s = totalSec % 60;
+        return m + ':' + (s < 10 ? '0' : '') + s;
+    };
+    curEl.textContent = fmt(progress);
+    durEl.textContent = fmt(duration);
 }
 
 // --- Background Logic ---
@@ -199,8 +234,10 @@ async function fetchNowPlaying() {
         const currentTrackId = data.id;
         
         currentProgress = data.progress;
+        currentDuration = data.duration;
         lastUpdateTime = performance.now();
         isPlayingState = isPlaying;
+        updateProgressBar(data.progress, data.duration);
 
         const songChanged = (currentTrackId !== lastTrackId);
         const resumed = (currentTrackId === lastTrackId) && (!lastIsPlaying && isPlaying);
@@ -215,9 +252,16 @@ async function fetchNowPlaying() {
 
         // --- CORE UPDATE LOGIC ---
         if (songChanged || resumed || (isPlaying && container.classList.contains('visible')) || isNearEnd) {
-            updateUI(data, songChanged);
+            // [FIX] Defer showNotification until media is fully ready (art + canvas loaded).
+            // Pass it as a callback so updateUI triggers it only after flip animation is set up.
+            // For "resumed" (same song, media already loaded): notify immediately below.
+            // For song change while "always show" is on: box already visible, no deferred wait needed.
+            const notifyOnReady = (songChanged && isPlaying && !alwaysShowCheckbox.checked)
+                ? showNotification
+                : null;
+            updateUI(data, songChanged, notifyOnReady);
         }
-        
+
         if (songChanged) {
             if (isPlaying) {
                 fetchLyrics(data);
@@ -225,8 +269,9 @@ async function fetchNowPlaying() {
                 lyricsContainer.classList.remove('visible');
             }
         }
-        
-        if ((songChanged && isPlaying) || resumed) {
+
+        // Resumed: same song, media already displayed — show immediately
+        if (resumed) {
             showNotification();
         } else if (isNearEnd) {
             if (!container.classList.contains('visible') && !isEditing) {
@@ -234,6 +279,7 @@ async function fetchNowPlaying() {
             }
             if (hideTimeout) clearTimeout(hideTimeout);
         }
+        // Note: songChanged && isPlaying → notification is now deferred inside updateUI via onReady
 
         lastTrackId = currentTrackId;
         lastIsPlaying = isPlaying;
@@ -243,15 +289,17 @@ async function fetchNowPlaying() {
     }
 }
 
-async function updateUI(data, songChanged) {
-    // 1. Update Text (Always check if change)
+// onReady: optional callback fired once all media is loaded and flip is triggered.
+// This allows the caller to defer showing the container until content is truly ready.
+async function updateUI(data, songChanged, onReady = null) {
+    // 1. Update Text (always, regardless of songChanged)
     if (trackName.textContent !== data.name) {
         if (typeof anime !== 'undefined' && typeof anime.remove === 'function') anime.remove(trackName);
         trackName.style.top = '-30px';
         trackName.style.opacity = '0';
         trackName.textContent = data.name;
         checkOverflow(trackName);
-        
+
         safeAnimate(trackName, {
             top: 0,
             opacity: 1,
@@ -260,14 +308,14 @@ async function updateUI(data, songChanged) {
             delay: 100
         });
     }
-    
+
     if (artistName.textContent !== data.artist) {
         if (typeof anime !== 'undefined' && typeof anime.remove === 'function') anime.remove(artistName);
         artistName.style.top = '20px';
         artistName.style.opacity = '0';
         artistName.textContent = data.artist;
         checkOverflow(artistName);
-        
+
         safeAnimate(artistName, {
             top: 0,
             opacity: 1,
@@ -277,67 +325,122 @@ async function updateUI(data, songChanged) {
         });
     }
 
-    // 2. Handle Flip & Media (Only if song changed)
-    if (songChanged) {
-        const targetIndex = 1 - currentSlideIndex;
-        const targetSlide = slides[targetIndex];
-        const targetImg = targetSlide.querySelector('.album-art');
-        const targetVideo = targetSlide.querySelector('.album-video');
+    // 2. No media change — notify immediately (text was the only update)
+    if (!songChanged) {
+        onReady?.();
+        return;
+    }
 
-        // [FIX] Capture the track ID at the time this handler is registered.
-        // If the song changes again before onload fires (rapid skipping),
-        // `lastTrackId` will have moved on — we check against `data.id` to discard stale callbacks.
-        const expectedTrackId = data.id;
+    // 3. Song changed — load art + canvas, then flip, then notify
+    const targetIndex = 1 - currentSlideIndex;
+    const targetSlide = slides[targetIndex];
+    const targetImg = targetSlide.querySelector('.album-art');
+    const targetVideo = targetSlide.querySelector('.album-video');
 
-        // Reset target slide state
-        targetVideo.classList.remove('visible');
-        targetVideo.pause();
-        targetVideo.src = "";
-        targetImg.crossOrigin = "Anonymous";
-        targetImg.src = data.albumArt;
+    // [FIX] Capture track ID in closure to guard against rapid song skipping
+    const expectedTrackId = data.id;
 
-        // Extract color and flip
-        targetImg.onload = async () => {
-            // [FIX] Guard: discard if a newer song has already taken over
-            if (lastTrackId !== expectedTrackId) return;
+    // Reset target slide
+    targetVideo.classList.remove('visible');
+    targetVideo.pause();
+    targetVideo.src = '';
+    targetImg.crossOrigin = 'Anonymous';
+    targetImg.src = data.albumArt;
 
-            // Update Background Gradient
-            try {
-                const color = colorThief.getColor(targetImg);
-                const rgbString = color.join(',');
-                bgGradient.style.background = `linear-gradient(135deg, rgba(${rgbString}, 0.9) 0%, rgba(20,20,20, 0.95) 100%)`;
-            } catch (e) {
-                bgGradient.style.background = `linear-gradient(135deg, rgba(50,50,50,0.9) 0%, rgba(20,20,20, 0.95) 100%)`;
+    // [FIX] One-shot notifier: fires onReady exactly once even if multiple paths resolve.
+    // Also clears the safety timeout so it doesn't double-fire.
+    let mediaNotified = false;
+    const notifyReady = () => {
+        if (mediaNotified) return;
+        mediaNotified = true;
+        clearTimeout(safetyTimer);
+        onReady?.();
+    };
+
+    // [FIX] Safety fallback: if image or canvas stalls for any reason,
+    // show the box after 5s rather than leaving it permanently hidden.
+    const safetyTimer = onReady ? setTimeout(notifyReady, 5000) : null;
+
+    // [FIX] Handle broken album art (e.g. network error) — flip & notify anyway
+    targetImg.onerror = () => {
+        if (lastTrackId !== expectedTrackId) return;
+        artWrapper.style.height = '90px';
+        triggerFlip(targetIndex);
+        notifyReady();
+    };
+
+    targetImg.onload = async () => {
+        // [FIX] Guard: stale if song changed again while image was loading
+        if (lastTrackId !== expectedTrackId) {
+            clearTimeout(safetyTimer);
+            return;
+        }
+
+        // Extract dominant color for background gradient
+        try {
+            const color = colorThief.getColor(targetImg);
+            const rgbString = color.join(',');
+            bgGradient.style.background = `linear-gradient(135deg, rgba(${rgbString}, 0.9) 0%, rgba(20,20,20, 0.95) 100%)`;
+        } catch (e) {
+            bgGradient.style.background = `linear-gradient(135deg, rgba(50,50,50,0.9) 0%, rgba(20,20,20, 0.95) 100%)`;
+        }
+
+        // Fetch Spotify Canvas video for this track
+        try {
+            const res = await fetch(`/api/canvas?trackId=${expectedTrackId}`);
+            const canvasData = await res.json();
+
+            // [FIX] Guard after async canvas fetch
+            if (lastTrackId !== expectedTrackId) {
+                clearTimeout(safetyTimer);
+                return;
             }
 
-            // Fetch Canvas for this specific track
-            try {
-                const res = await fetch(`/api/canvas?trackId=${expectedTrackId}`);
-                const canvasData = await res.json();
-
-                // [FIX] Guard again after the async canvas fetch
-                if (lastTrackId !== expectedTrackId) return;
-
-                if (canvasData.canvasUrl) {
-                    targetVideo.src = canvasData.canvasUrl;
-                    targetVideo.onloadeddata = () => {
-                        if (lastTrackId !== expectedTrackId) return; // Guard in video load too
-                        const videoRatio = targetVideo.videoHeight / targetVideo.videoWidth;
+            if (canvasData.canvasUrl) {
+                targetVideo.src = canvasData.canvasUrl;
+                targetVideo.onloadeddata = () => {
+                    // [FIX] Guard inside video load
+                    if (lastTrackId !== expectedTrackId) return;
+                    const videoRatio = targetVideo.videoHeight / targetVideo.videoWidth;
+                    if (obsCanvas.classList.contains('theme-green')) {
+                        // Green theme: art wrapper is full card width.
+                        // Height must match the video's actual ratio — no artificial cap
+                        // so object-fit:cover fills without distortion.
+                        const wrapW = artWrapper.offsetWidth || container.offsetWidth || 270;
+                        artWrapper.style.height = `${wrapW * videoRatio}px`;
+                    } else {
+                        // Classic theme: wrapper is 90px wide
                         artWrapper.style.height = `${90 * videoRatio}px`;
-                        targetVideo.classList.add('visible');
-                        targetVideo.play().catch(() => {});
-                        triggerFlip(targetIndex);
-                    };
+                    }
+                    targetVideo.classList.add('visible');
+                    targetVideo.play().catch(() => {});
+                    triggerFlip(targetIndex);
+                    notifyReady(); // ✓ Art + Canvas loaded — safe to show
+                };
+            } else {
+                // No canvas — album art only
+                if (obsCanvas.classList.contains('theme-green')) {
+                    // Make the container square to match album art (always 1:1)
+                    const wrapW = artWrapper.offsetWidth || container.offsetWidth || 270;
+                    artWrapper.style.height = `${wrapW}px`;
                 } else {
                     artWrapper.style.height = '90px';
-                    triggerFlip(targetIndex);
                 }
-            } catch (e) {
-                artWrapper.style.height = '90px';
                 triggerFlip(targetIndex);
+                notifyReady(); // ✓ Art loaded, no canvas — safe to show
             }
-        };
-    }
+        } catch (e) {
+            // Canvas fetch failed — fall back to square album art
+            if (obsCanvas.classList.contains('theme-green')) {
+                const wrapW = artWrapper.offsetWidth || container.offsetWidth || 270;
+                artWrapper.style.height = `${wrapW}px`;
+            } else {
+                artWrapper.style.height = '90px';
+            }
+            triggerFlip(targetIndex);
+            notifyReady(); // ✓ Canvas failed gracefully — safe to show
+        }
+    };
 }
 
 function triggerFlip(nextIndex) {
@@ -586,12 +689,11 @@ saveBtn.addEventListener('click', () => {
     localStorage.setItem('lyricsScale', lyricsScaleSlider.value);
     localStorage.setItem('lyricsAnimation', lyricsAnimSelect.value);
     localStorage.setItem('alwaysShowPlayer', alwaysShowCheckbox.checked);
-    if (!alwaysShowCheckbox.checked) setTimeout(() => container.classList.remove('visible'), 2000);
+    localStorage.setItem('overlayTheme', themeSelect.value);
+    applyTheme(themeSelect.value);
+    if (alwaysShowCheckbox.checked === false) setTimeout(() => container.classList.remove('visible'), 2000);
 });
 
-// [FIX] Adaptive polling — 1s when music is playing, 5s when paused.
-// Using recursive setTimeout instead of setInterval so the delay is recalculated
-// after each response (avoids overlap if a fetch takes longer than the interval).
 async function pollNowPlaying() {
     await fetchNowPlaying();
     const nextDelay = isPlayingState ? 1000 : 5000;
