@@ -3,7 +3,6 @@ const axios = require('axios');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const querystring = require('querystring');
-const open = require('open');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -23,11 +22,13 @@ const app = express();
 app.use(cors());
 app.use(express.static(path.join(__dirname, 'public')));
 
-const PORT = 8888;
+const PORT = parseInt(process.env.PORT || '8888', 10);
 const PHP_PORT = 8100;
 const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
 const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
-const REDIRECT_URI = `http://127.0.0.1:${PORT}/callback`;
+// Allow overriding the redirect URI (needed when hosted on a VPS with a public domain).
+// Must match EXACTLY one of the Redirect URIs in the Spotify Developer Dashboard.
+const REDIRECT_URI = process.env.SPOTIFY_REDIRECT_URI || `http://127.0.0.1:${PORT}/callback`;
 
 // Store tokens in memory
 let accessToken = null;
@@ -279,7 +280,10 @@ function fetchLyricsFromYouTube(trackName, artistName, isrc) {
         const args = ['fetch_yt_lyrics.py', trackName, artistName];
         if (isrc) args.push(isrc);
 
-        const pythonProcess = spawn('python', args);
+        // Prefer 'python3' (Linux/macOS default), fall back to 'python' (Windows / legacy).
+        // Override via PYTHON_CMD env var if needed.
+        const pythonCmd = process.env.PYTHON_CMD || (process.platform === 'win32' ? 'python' : 'python3');
+        const pythonProcess = spawn(pythonCmd, args);
         let dataString = '';
         let resolved = false;
 
@@ -611,11 +615,15 @@ app.get('/api/canvas', async (req, res) => {
     }
 });
 
-app.listen(PORT, '127.0.0.1', () => {
+// Bind to 127.0.0.1 by default (safer). Override with BIND_HOST=0.0.0.0 in .env
+// when exposing directly (NOT recommended — use an nginx reverse proxy instead).
+const BIND_HOST = process.env.BIND_HOST || '127.0.0.1';
+app.listen(PORT, BIND_HOST, () => {
     // Start PHP Server when Node server starts
     startPhpServer();
 
-    console.log(`Server running at http://127.0.0.1:${PORT}`);
-    console.log(`Please verify that your Spotify App Redirect URI is set to: http://127.0.0.1:${PORT}/callback`);
-    console.log(`To login, go to http://127.0.0.1:${PORT}/login`);
+    const publicUrl = REDIRECT_URI.replace(/\/callback$/, '');
+    console.log(`Server listening on ${BIND_HOST}:${PORT}`);
+    console.log(`Redirect URI:  ${REDIRECT_URI}`);
+    console.log(`To login, go to ${publicUrl}/login`);
 });
