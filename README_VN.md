@@ -50,7 +50,7 @@ Trước khi chạy, hãy đảm bảo máy bạn đã có:
 1.  **Node.js:** Đã cài đặt.
 2.  **PHP:** Đã cài đặt và thêm vào biến môi trường (Enable `curl`, `mbstring`, `openssl`).
 3.  **Python:** Cần thiết nếu muốn dùng nguồn YouTube Music.
-4.  **Tài khoản Spotify Premium:** (Khuyến nghị).
+4.  **Tài khoản Spotify Premium:** Bắt buộc (Vì không thể call API).
 
 ## 🚀 Hướng Dẫn Setup Chi Tiết
 
