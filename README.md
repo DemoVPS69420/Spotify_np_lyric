@@ -51,7 +51,7 @@ Before running, ensure you have:
 1.  **Node.js:** Installed on your machine.
 2.  **PHP:** Installed and added to your system PATH (Enable `curl`, `mbstring`, `openssl`).
 3.  **Python:** Installed for YouTube Music support.
-4.  **Spotify Premium Account:** (Recommended).
+4.  **Spotify Premium Account:** Must have (can't call API without Premium).
 
 ## 🚀 Setup Guide
 
