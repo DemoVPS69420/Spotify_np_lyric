@@ -72,7 +72,7 @@ npm install
 ```
 
 ### 2. Cấu Hình PHP (Quan trọng)
-1.  Tìm file `php.ini` trong thư mục cài đặt PHP.
+1.  Tìm file `php.ini` trong thư mục cài đặt PHP SAU KHI CÀI (Nếu mặc định sẽ là C:\Users\[Tên PC/User]\AppData\Local).
 2.  Mở bằng Notepad.
 3.  Tìm và **xóa dấu chấm phẩy (;)** ở đầu các dòng sau để kích hoạt:
     ```ini
